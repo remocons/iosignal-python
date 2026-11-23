@@ -22,3 +22,19 @@ class MipPackageTest(unittest.TestCase):
                           for m in names], pkg["urls"])
         for m in names:
             self.assertTrue(os.path.exists(os.path.join(ROOT, "src", "iosignal", m + ".py")), m)
+
+
+class VersionTest(unittest.TestCase):
+    def test_one_version(self):
+        # The public pyproject is in public/ here and at the root of the public repository.
+        path = next(p for p in (os.path.join(ROOT, "public", "pyproject.toml"), os.path.join(ROOT, "pyproject.toml"))
+                    if os.path.exists(p))
+        with open(path, encoding="utf-8") as f:
+            version = re.search(r'^version = "([^"]+)"$', f.read(), re.M).group(1)
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        from iosignal import __version__
+        self.assertEqual(version, __version__)
+        if PACKAGE:
+            with open(PACKAGE, encoding="utf-8") as f:
+                self.assertEqual(version, json.load(f)["version"])
