@@ -1,7 +1,12 @@
 {
   "sync": [
+    "examples/blink.py",
+    "examples/board_default.py",
+    "examples/board_info.py",
+    "examples/board_iris.py",
     "examples/board_light.py",
     "examples/board_relay_buttons.py",
+    "examples/button_read.py",
     "examples/virtual_home.py",
     "examples/virtual_lamp.py",
     "src/iosignal/__init__.py",
