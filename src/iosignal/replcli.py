@@ -11,19 +11,26 @@
 
 Options and environment:
     -s/--server URL   IOSIGNAL_SERVER   default wss://io.iosignal.net/ws
-    -k/--key FILE     REPL_KEY_FILE     default ~/.iosignal/repl-<board>.key
+    -k/--key KEY      REPL_KEY          the REPL key as 64 hex digits (or, as before, a file that holds it)
+                      REPL_KEY_FILE     a key file; default ~/.iosignal/repl-<board>.key
     -b/--board CID    IOSIGNAL_BOARD    default: the only micropython.1 board found on this network
+
+The key is looked up in that order: -k, REPL_KEY, REPL_KEY_FILE, ~/.iosignal/repl-<board>.key. Without one,
+it is asked for on the terminal (not echoed). A key given with -k stays in the shell history; REPL_KEY or the
+prompt do not.
 """
 
 import argparse
 import asyncio
+import getpass
 import os
+import re
 import sys
 import time
 
 from . import devices
 from .client import IOSignal
-from .replhost import FsError, RawRepl, ReplSession, load_key
+from .replhost import FsError, RawRepl, ReplSession
 
 DEFAULT_SERVER = "wss://io.iosignal.net/ws"
 EXIT_KEY = b"\x1d"  # Ctrl-]
@@ -42,12 +49,49 @@ async def find_boards(io: IOSignal, wait=1.5):
     return [d for d in await devices.discover(io, wait=wait) if is_repl_board(d)]
 
 
-def key_for(board: str, path: str | None) -> bytes:
-    path = path or os.environ.get("REPL_KEY_FILE") or os.path.expanduser("~/.iosignal/repl-%s.key" % board)
+_HEX_KEY = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _key_text(text: str, where: str) -> bytes:
+    text = text.strip()
+    if not _HEX_KEY.match(text):
+        raise CliError("the REPL key %s is not 64 hex digits" % where)
+    return bytes.fromhex(text)
+
+
+def key_for(board: str, given: str | None, ask=None) -> bytes:
+    """The REPL key: -k (the key itself, or a key file), REPL_KEY, REPL_KEY_FILE, ~/.iosignal/repl-<board>.key,
+    then ``ask()`` (a terminal prompt) when nothing was found."""
+    if given:
+        if _HEX_KEY.match(given.strip()):
+            return _key_text(given, "given with -k")
+        return _key_file(given)
+    if os.environ.get("REPL_KEY"):
+        return _key_text(os.environ["REPL_KEY"], "in REPL_KEY")
+    if os.environ.get("REPL_KEY_FILE"):
+        return _key_file(os.environ["REPL_KEY_FILE"])
+    default = os.path.expanduser("~/.iosignal/repl-%s.key" % board)
+    if os.path.exists(default):
+        return _key_file(default)
+    if ask is not None:
+        return _key_text(ask(), "typed")
+    raise CliError("no REPL key for %s: give -k KEY (64 hex digits), set REPL_KEY, or save it in %s"
+                   % (board, default))
+
+
+def _key_file(path: str) -> bytes:
     try:
-        return load_key(path)
+        with open(os.path.expanduser(path)) as f:
+            return _key_text(f.read(), "in " + path)
     except OSError:
-        raise CliError("no REPL key at %s (give --key FILE or REPL_KEY_FILE)" % path) from None
+        raise CliError("no REPL key file at %s" % path) from None
+
+
+def _prompt(board: str):
+    """Asks on the terminal when there is one; None (no prompt) for pipes and scripts."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return None
+    return lambda: getpass.getpass("REPL key for %s (64 hex digits, not shown): " % board)
 
 
 async def connect(args):
@@ -71,7 +115,8 @@ async def open_session(io, args):
                 "no micropython.1 board found on this network" if not found else
                 "found: " + ", ".join("%s (%s)" % (d.id, d.name) for d in found)))
         board = found[0].id
-    s = ReplSession(io, board, key_for(board, args.key))
+    key = await asyncio.to_thread(key_for, board, args.key, _prompt(board))  # a prompt must not stop the client
+    s = ReplSession(io, board, key)
     if not await s.open(timeout=8):
         raise CliError("board %s did not answer (offline, wrong key, or not this board)" % board)
     return s
@@ -367,7 +412,7 @@ def parser():
     p = argparse.ArgumentParser(prog="iosignal-repl", description=__doc__.splitlines()[0],
                                 formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     p.add_argument("-s", "--server", default=os.environ.get("IOSIGNAL_SERVER", DEFAULT_SERVER))
-    p.add_argument("-k", "--key", default=None, help="REPL key file (hex)")
+    p.add_argument("-k", "--key", default=None, help="REPL key: 64 hex digits, or a file holding them")
     p.add_argument("-b", "--board", default=os.environ.get("IOSIGNAL_BOARD"), help="board CID")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("find")

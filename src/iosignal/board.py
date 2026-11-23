@@ -7,7 +7,8 @@ Returns at once (the REPL stays free; nothing blocks the boot); Wi-Fi, clock and
 link's timer callback, and come back by themselves when lost. Files on the board:
 
     /iosignal.json  {"server": "cong://io.iosignal.net:55488", "id": "mydev01", "name": "작업대 ESP32:실험실",
-                     "repl": true, "device": {"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true}}
+                     "repl": true, "device": {"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true},
+                     "txpower": 8.5}
     /device.json    {"key": "<device key>"}          login key of "id" (tools/mpy_board_setup.py, never printed)
     /wifi.json      {"ssid": "...", "password": "..."}  (tools/mpy_wifi_setup.py)
     /repl.json      {"key": "<64 hex>"}               REPL key (tools/mpy_repl_key.py); no key: no remote REPL
@@ -15,6 +16,11 @@ link's timer callback, and come back by themselves when lost. Files on the board
 "device" (optional) makes the board a device driving pins (pin_device): light.1 (1 pin), dimmer.1 (1 PWM pin),
 relay4.1 (4 pins), switch2.1/3.1/4.1/8.1 (2/3/4/8 pins); "invert" for outputs that are on at LOW (relay
 modules). A main.py that calls board.device() itself replaces it.
+
+"txpower" (optional): Wi-Fi send power in dBm. Small ESP32-C3 boards (iris) lose sent packets at full power
+until TCP stalls; 8.5 fixes it. Wi-Fi power save is always off.
+"wifi_mode" (optional): "b" for 802.11b only (slower, but holds on a much weaker signal: a far room), "bg", "bgn".
+/linklog.txt: every drop and reconnect with UTC time and the Wi-Fi signal, kept near 4 KB ("linklog": false: off).
 
 Without "id" the board connects anonymously (its CID changes every time; only for trying things out).
 """
@@ -36,6 +42,9 @@ def _load(path):
 def start(config="/iosignal.json"):
     """Starts the link from the config files; returns it, or None (with the reason printed) when it cannot."""
     global link, _name
+    if link is not None and link.timer:  # e.g. main.py run again from the REPL: a second link would take Timer(0)
+        print("iosignal: already started")
+        return link
     cfg = _load(config)
     if not cfg or "server" not in cfg:
         print("iosignal: no %s with a server, not started" % config)
@@ -53,7 +62,8 @@ def start(config="/iosignal.json"):
     from . import replpoll
     link = replpoll.start(cfg["server"], key, auth,
                           wifi=(wifi["ssid"], wifi["password"]) if wifi else None,
-                          name=cfg.get("name"))
+                          name=cfg.get("name"), txpower=cfg.get("txpower"), wifi_mode=cfg.get("wifi_mode"),
+                          linklog=cfg.get("linklog", True))
     _name = cfg.get("name")
     del key, device, repl, wifi
     if cfg.get("device"):
@@ -74,7 +84,7 @@ def device(name=None, type="", state=None, buttons="", panel=None, view=None, on
     if link is None:
         raise RuntimeError("iosignal.board is not started (main.py: iosignal.board.start())")
     from .mdevice import Device
-    d = Device(name or _name or "MicroPython", type=type, state=state, buttons=buttons, panel=panel, view=view,
+    d = Device(name or _name, type=type, state=state, buttons=buttons, panel=panel, view=view,
                on_command=on_command, on_change=on_change)
     link.set_device(d)
     return d

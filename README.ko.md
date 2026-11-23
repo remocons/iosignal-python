@@ -124,13 +124,21 @@ lamp.set(on="1")   # 내 코드에서 바꿔도 앱에 바로 보임
 - 콜백은 링크의 타이머 안에서 돌므로 짧게 씁니다. 콜백 오류는 `board.status()`에 남고 링크는 계속 돕니다.
 - 다른 장치: `board.subscribe("abc-123@$state", fn)`, `board.signal("abc-123@", "r1=1")`. 예: [examples/board_relay_buttons.py](examples/board_relay_buttons.py).
 - 코드 없이: `/iosignal.json`에 `"device"` 항목(예: `{"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true}`)을 두면 핀 장치가 됩니다(light.1, dimmer.1 PWM, relay4.1, switch2.1~8.1).
+- 다른 예: [examples/board_iris.py](examples/board_iris.py)(RGB LED 4개의 iris.2 조명, 버튼 2를 누르고 있으면 LED로 Wi-Fi 신호와 연결 상태 표시), [examples/board_light.py](examples/board_light.py), 한 번 실행하는 짧은 예 [blink.py](examples/blink.py), [button_read.py](examples/button_read.py), [board_info.py](examples/board_info.py). [board_default.py](examples/board_default.py)는 기본 `main.py`(연결만)입니다.
+- 로그인한 보드에 `name`이 없으면 CID에 등록된 이름이 그대로 보입니다. 명령이 몰리면(슬라이더 끌기) `$state`는 300 ms에 한 번까지만 보내고, 마지막에는 항상 최신 상태로 답합니다.
+
+### 작은 보드의 Wi-Fi
+
+- `/iosignal.json`의 `"txpower": 8.5`는 Wi-Fi 송신 출력(dBm)입니다. 작은 ESP32-C3 보드(iris, C3 SuperMini 등)는 최대 출력에서 보낸 패킷을 잃어 연결이 멈춥니다. 공유기 가까이에서는 8.5로 해결되고, 먼 방에서는 11, 15로 올립니다. Wi-Fi 절전은 항상 끕니다.
+- `"wifi_mode": "b"`는 802.11b만 씁니다. 느리지만 훨씬 약한 신호에서도 버팁니다. 공유기가 802.11b를 허용해야 합니다.
+- 보내기가 멈추면(핑에 PONG이 없거나 10초 동안 한 바이트도 못 보냄) 명령이 계속 들어오는 중에도 링크가 스스로 다시 연결합니다. 끊김과 재연결은 UTC 시각, 이유, 신호 세기와 함께 `/linklog.txt`에 남습니다(약 4 KB 유지, `"linklog": false`로 끔).
 
 ### 원격 REPL `iosignal-repl`
 
 REPL 키가 있는 보드는 어디서나 IOSignal을 거쳐 `mpremote`처럼 다룰 수 있습니다. 세션은 REPL 키와 일회용 X25519 키로 봉하므로(forward secrecy) 브로커는 봉한 바이트만 전달합니다.
 
 ```sh
-export REPL_KEY_FILE=~/.iosignal/repl-myboard.key   # 또는 -k FILE
+# REPL 키(64자리 hex): 묻는 칸에 붙여 넣거나(화면에 안 보임), export REPL_KEY=<키>, -k <키>, 또는 키 파일 ~/.iosignal/repl-<보드>.key
 iosignal-repl find                    # 같은 네트워크의 보드
 iosignal-repl repl                    # 대화형 (Ctrl-] 나가기, Ctrl-C는 보드로)
 iosignal-repl exec "print(1+1)"       # 출력이 오는 대로, 예외면 종료 코드 1

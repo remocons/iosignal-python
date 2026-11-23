@@ -64,25 +64,62 @@ def handler(cmd, dev):
     return False
 
 
+clock = [0]
+mdevice._ticks = lambda: clock[0]
+mdevice._diff = lambda a, b: a - b
+
+
+def later(ms=1000):
+    clock[0] += ms
+
+
 d = mdevice.Device("x", type="dimmer.1", state="on=0;level=50", on_command=handler,
                    on_change=lambda dev: seen.append("change " + dev.state.text()))
 d.link = FakeLink()
 d.command("on")
+later()
 d.command("on")
+later()
 d.command("blink")
+later()
 check(seen, ["change on=1;level=50", "blink"], "callbacks")
 check(sent, [("@$state", "on=1;level=50")] * 3, "answers")
 d.set(level=80)
+later()
 check(sent[-1], ("@$state", "on=1;level=80"), "set")
 check(d.set(level=80), False, "set same")
 d.on_change = lambda dev: 1 / 0
 d.command("off")
+later()
 check((len(d.errors), sent[-1][1]), (1, "on=0;level=80"), "error kept, still answered")
+
+# a burst (a dragged slider): the first command answers at once, the rest share one reply with the latest state
+n = len(sent)
+for v in (10, 20, 30, 40):
+    d.command("level=%d" % v)
+    later(30)
+check(len(sent) - n, 1, "burst: one reply at once")
+d.flush()
+check(len(sent) - n, 1, "burst: nothing more before STATE_MIN_MS")
+later(mdevice.STATE_MIN_MS)
+d.flush()
+check((len(sent) - n, sent[-1][1]), (2, "on=0;level=40"), "burst: then one reply with the latest state")
+d.flush()
+check(len(sent) - n, 2, "burst: nothing owed after that")
 
 announced = []
 d2 = mdevice.Device("팬:거실", type="fan.1", state="on=0;speed=3", view={"kind": "fan"})
 d2.announce(lambda tag, text: announced.append(tag))
 check(announced, ["@$view", "@$name", "@$ui", "@$state"], "announce order")
+
+# no name of its own: no $name when the link gives no default (a logged-in board keeps its registered name)
+nameless = mdevice.Device(None, type="light.1", state="on=0")
+sent_names = []
+nameless.announce(lambda tag, text: sent_names.append((tag, text)))
+check([t for t, _ in sent_names], ["@$ui", "@$state"], "nameless, logged in: no $name")
+sent_names = []
+nameless.announce(lambda tag, text: sent_names.append((tag, text)), "MicroPython")
+check(sent_names[0], ("@$name", "MicroPython"), "nameless, anonymous: default name")
 
 try:
     mdevice.State("on=1").put("x", "a;b")

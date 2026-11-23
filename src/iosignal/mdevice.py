@@ -24,6 +24,21 @@ import json
 
 BOARD_TYPE = "micropython.1"
 STATE_MAX = 200
+STATE_MIN_MS = 300  # at most one $state per this long: a burst (a dragged slider) gets one reply with the latest state.
+# Apps send a dragged slider every 150 ms at most (iosignal/devices createThrottle, Android Widgets.kt), so a drag
+# answers with about every other command; 300 ms was fine on a weak 802.11b link (2026-11-24, iris board).
+
+try:
+    from time import ticks_diff as _diff
+    from time import ticks_ms as _ticks
+except ImportError:  # CPython
+    import time as _time
+
+    def _ticks():
+        return int(_time.monotonic() * 1000)
+
+    def _diff(a, b):
+        return a - b
 
 
 def _alpha(c):
@@ -138,8 +153,11 @@ class State:
 class Device:
     def __init__(self, name, type="", state=None, buttons="", panel=None, view=None,  # noqa: A002
                  on_command=None, on_change=None, group=""):
-        i = name.find(":")
-        self.name = format_name(name[:i], name[i + 1:]) if i >= 0 and not group else format_name(name, group)
+        if name is None:  # no name of its own: a logged-in board keeps the name the server registered (announce)
+            self.name = None
+        else:
+            i = name.find(":")
+            self.name = format_name(name[:i], name[i + 1:]) if i >= 0 and not group else format_name(name, group)
         self.type = type
         self.buttons = buttons
         self.panel = panel
@@ -153,6 +171,8 @@ class Device:
         self.repl = True  # the link has the remote REPL ($ui r=1); set by the link
         self.commands = 0
         self.errors = []
+        self.pending = False    # a $state is owed: it goes out when STATE_MIN_MS has passed (flush)
+        self._sent_at = None
 
     def ui(self):
         return format_ui(self.type, self.buttons, bool(self.panel), bool(self.view), self.repl)
@@ -171,16 +191,37 @@ class Device:
         return changed
 
     def publish_state(self):
-        if self.link is not None:
-            self.link.device_publish("@$state", self.state.text())
+        """Sends $state now, or, within STATE_MIN_MS of the last one, marks it owed: the link's timer sends the
+        latest state when the time has passed (flush). Every command is still answered."""
+        if self.link is None:
+            return
+        now = _ticks()
+        if self._sent_at is not None and _diff(now, self._sent_at) < STATE_MIN_MS:
+            self.pending = True
+            return
+        self._send_state(now)
 
-    def announce(self, publish):
-        """In the rules' order: $panel, $view, $name, $ui, $state (the link adds #search and #notify)."""
+    def flush(self):
+        """Sends an owed $state once STATE_MIN_MS has passed; the link calls it every tick."""
+        if self.pending and self.link is not None and _diff(_ticks(), self._sent_at) >= STATE_MIN_MS:
+            self._send_state(_ticks())
+
+    def _send_state(self, now):
+        self.pending = False
+        self._sent_at = now
+        self.link.device_publish("@$state", self.state.text())
+
+    def announce(self, publish, default_name=None):
+        """In the rules' order: $panel, $view, $name, $ui, $state (the link adds #search and #notify).
+        Without a name of its own the device sends ``default_name``, or no $name at all when that is None: a
+        logged-in board then keeps the name the server stored for its CID at login."""
         if self.panel:
             publish("@$panel", json.dumps(self.panel))
         if self.view:
             publish("@$view", json.dumps(self.view))
-        publish("@$name", self.name)
+        name = self.name or default_name
+        if name:
+            publish("@$name", name)
         publish("@$ui", self.ui())
         publish("@$state", self.state.text())
 

@@ -124,13 +124,21 @@ lamp.set(on="1")   # changes from your own code show in the apps at once
 - Callbacks run in the link's timer: keep them short. Their errors go to `board.status()` and the link keeps running.
 - Other devices: `board.subscribe("abc-123@$state", fn)` and `board.signal("abc-123@", "r1=1")`. Example: [examples/board_relay_buttons.py](examples/board_relay_buttons.py).
 - Without code: a `"device"` entry in `/iosignal.json`, for example `{"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true}`, makes a pin device (light.1, dimmer.1 PWM, relay4.1, switch2.1~8.1).
+- More examples: [examples/board_iris.py](examples/board_iris.py) (an iris.2 light with four RGB LEDs; hold button 2 to show the Wi-Fi signal and connection on the LEDs), [examples/board_light.py](examples/board_light.py), and short scripts to run once: [blink.py](examples/blink.py), [button_read.py](examples/button_read.py), [board_info.py](examples/board_info.py). [board_default.py](examples/board_default.py) is the plain `main.py` (link only).
+- A logged-in board without a `name` keeps the name registered for its CID. A burst of commands (a dragged slider) is answered with at most one `$state` per 300 ms, always ending with the latest state.
+
+### Wi-Fi on small boards
+
+- `/iosignal.json` `"txpower": 8.5` sets the Wi-Fi send power in dBm. Small ESP32-C3 boards (for example iris, C3 SuperMini) lose sent packets at full power until the connection stalls; 8.5 fixes that near the router, raise it (11, 15) in a far room. Wi-Fi power save is always off.
+- `"wifi_mode": "b"` uses 802.11b only: slower, but it holds on a much weaker signal. The router must allow 802.11b.
+- The link reconnects by itself when its sending stalls (no PONG to a ping, or nothing sent for 10 s), also while commands keep arriving. Every drop and reconnect is written to `/linklog.txt` with the UTC time, the reason and the signal (kept near 4 KB; `"linklog": false` turns it off).
 
 ### Remote REPL: `iosignal-repl`
 
 A board with a REPL key can be used like `mpremote` from anywhere, through IOSignal. Sessions are sealed with the REPL key and one-time X25519 keys (forward secrecy), so the broker relays only sealed bytes.
 
 ```sh
-export REPL_KEY_FILE=~/.iosignal/repl-myboard.key   # or -k FILE
+# REPL key (64 hex digits): paste it when asked (not shown), or export REPL_KEY=<key>, -k <key>, or a key file ~/.iosignal/repl-<board>.key
 iosignal-repl find                    # boards on the same network
 iosignal-repl repl                    # interactive (Ctrl-] leaves, Ctrl-C goes to the board)
 iosignal-repl exec "print(1+1)"       # streamed output, exit code 1 on an exception

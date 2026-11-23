@@ -39,11 +39,16 @@ _POLL, _POLL_RD, _POLL_WR = 3, 0x0001, 0x0004
 FRAME = 900
 OUT_CAP = 4096
 TX_CAP = 16384
-PING_MS, PONG_MS, HELLO_MS = 30000, 15000, 10000
+PING_MS, PONG_MS, HELLO_MS = 30000, 12000, 10000
+ACTIVE_PING_MS = 10000  # while sending: ping this long after the last PONG, though data keeps coming in
+STALL_MS = 10000        # data waiting to go out and not one byte sent for this long: the uplink is stuck
 RECV = 4096          # bytes read per tick
 FS_ACK_EVERY = 4096  # put: ack after this many bytes written
 GET_CHUNK = 1536     # get: bytes per DATA frame
 GET_PER_TICK = 2     # get: frames per tick (keeps the REPL responsive)
+PONG_PACKET = bytes([IOMsg.PONG])
+LINKLOG = "/linklog.txt"  # drops and reconnects (off with "linklog": false in /iosignal.json)
+LINKLOG_MAX = 4096
 BUSY_MS = 8          # a tick that works longer makes the link rest as long, so it takes at most about half the CPU
 
 
@@ -92,7 +97,8 @@ class Term(io.IOBase):
 
 
 class ReplLink:
-    def __init__(self, url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True):
+    def __init__(self, url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True, txpower=None,
+                 wifi_mode=None, linklog=True):
         if url.startswith("cong://"):
             url = url[7:]
         host, _, port = url.rpartition(":")
@@ -111,12 +117,21 @@ class ReplLink:
         self.seen_opens = {}          # cnonce -> unix seconds, for OPEN_MAX_AGE_S
         self.fs = None                # the file being sent or received
         self.wifi = wifi              # (ssid, password): the link brings Wi-Fi up itself; None: someone else does
+        self.txpower = txpower        # Wi-Fi send power in dBm, e.g. 8.5; None: the chip's default (the most)
+        self.wifi_mode = wifi_mode    # "b" (802.11b only: slow but reaches farther), "bg", "bgn"; None: as is
+        self.linklog = LINKLOG if linklog else None  # drops and reconnects, a line each, for weak spots
+        self.online_at = None         # ticks_ms when the link last became ready
+        self.down_at = None           # ticks_ms of the last logged drop (None: none since the last online)
+        self.logged_start = False
         self.name = name              # $name ("name:category"); None: no announcement of a name
         self.announce = announce      # answer #search and publish $name/$ui/$state (device rules)
         self.device = None            # an mdevice.Device: the board is that device (set_device)
         self.listeners = {}           # tag -> [fn(tag, value)]: signals the board's own code follows (subscribe)
         self.wlan = None
         self.wifi_at = 0
+        self.wifi_tuned = False       # _wifi_tune ran on this Wi-Fi connection
+        self.busy_us = 0              # time spent in _tick since busy_since (reported by the "info" request)
+        self.busy_since = time.ticks_ms()
         self.clock_ok = False
         self.clock_try = 0
         self.addr = None
@@ -131,6 +146,10 @@ class ReplLink:
         self.next_try = 0
         self.backoff = 1000
         self.opened_at = self.last_rx = self.ping_at = 0
+        self.ping_queued = False      # a PING is still in self.tx: its wait starts when it has gone out
+        self.pong_at = 0              # ticks_ms of the last PONG (or of connecting)
+        self.sent_since_pong = False  # something besides PING/PONG went out since then
+        self.tx_moved_at = 0          # ticks_ms when the send buffer last got data out (or got its first byte)
         self.errors = []
         self.stats = {"rx": 0, "tx": 0, "ticks": 0, "connects": 0, "refused": 0, "replayed": 0}
         self.timer = None
@@ -147,6 +166,7 @@ class ReplLink:
     def stop(self):
         if self.timer:
             self.timer.deinit()
+            self.timer = None
         os.dupterm(None)
         self._drop("stopped")
 
@@ -168,12 +188,16 @@ class ReplLink:
                 after, self.after = self.after, b""
                 self._input(after)
             self._poll()
+            if self.device is not None and self.device.pending:
+                self.device.flush()
             if self.eph is None and self.ready and self.owner is None and self.base is not None and not self.tx:
                 self.eph = self._new_eph()  # ~0.5 s on an ESP32-S3: done while nobody waits for it; False: no X25519
         except Exception as e:  # noqa: BLE001 - must never escape into the user's code
             self._error("tick %s: %s" % (type(e).__name__, e))
             self._drop("error")
-        spent = time.ticks_diff(time.ticks_us(), started) // 1000
+        spent_us = time.ticks_diff(time.ticks_us(), started)
+        self.busy_us += spent_us
+        spent = spent_us // 1000
         if spent > BUSY_MS:  # e.g. a file transfer: leave the main thread (the REPL, user code) as much time
             self.rest_until = time.ticks_add(now, 2 * spent)
             self.stats["rests"] = self.stats.get("rests", 0) + 1
@@ -202,8 +226,7 @@ class ReplLink:
                 self._drop("closed by server")
                 return
             self.stats["rx"] += 1
-            self.last_rx = now
-            self.ping_at = 0
+            self.last_rx = now  # only a PONG answers a ping: commands coming in say nothing about the uplink
             for frame in self.parser.feed(data):
                 self._packet(frame)
                 if self.sock is None:
@@ -221,12 +244,18 @@ class ReplLink:
         if not self.ready and time.ticks_diff(now, self.opened_at) > HELLO_MS:
             self._drop("no ready in time")
             return
-        if self.ping_at and time.ticks_diff(now, self.ping_at) > PONG_MS:
+        if self.tx and time.ticks_diff(now, self.tx_moved_at) > STALL_MS:
+            self._drop("send stall, %d bytes waiting" % len(self.tx))
+            return
+        if self.ping_at and not self.ping_queued and time.ticks_diff(now, self.ping_at) > PONG_MS:
             self._drop("no reply to ping")
             return
-        if not self.ping_at and time.ticks_diff(now, self.last_rx) > PING_MS:
+        if not self.ping_at and self.ready and (
+                time.ticks_diff(now, self.last_rx) > PING_MS
+                or (self.sent_since_pong and time.ticks_diff(now, self.pong_at) > ACTIVE_PING_MS)):
             self.ping_at = now
-            self._send(bytes([IOMsg.PING]), False)
+            self.ping_queued = True
+            self._send(bytes([IOMsg.PING]), False, ping=True)
         self._flush()
 
     # ---- connection
@@ -239,7 +268,9 @@ class ReplLink:
                 import network
                 self.wlan = network.WLAN(network.STA_IF)
                 self.wlan.active(True)
+                self._wifi_tune(self.wlan.isconnected())  # also when Wi-Fi is still up from before (a soft reset)
             if not self.wlan.isconnected():
+                self.wifi_tuned = False
                 if not self.wifi_at or time.ticks_diff(now, self.wifi_at) > 20000:
                     self.wifi_at = now
                     self.stats["wifi"] = self.stats.get("wifi", 0) + 1
@@ -247,12 +278,16 @@ class ReplLink:
                         self.wlan.disconnect()
                     except OSError:
                         pass
+                    self._wifi_tune()
                     try:
                         self.wlan.connect(self.wifi[0], self.wifi[1])
                     except OSError as e:
                         self._error("wifi %s" % e)
                 return
             self.wifi_at = 0
+            if not self.wifi_tuned:  # ESP-IDF puts the send power back to the most when it joins: set it again
+                self.wifi_tuned = True
+                self._wifi_tune(True)
         if not self.clock_ok:
             if time.ticks_diff(now, self.clock_try) < 0:
                 return
@@ -269,6 +304,55 @@ class ReplLink:
                 self._connect_start(now)
         else:
             self._connect_check(now)
+
+    def _log(self, text):
+        """One line in the link log: UTC time (once the clock is set), the event, the Wi-Fi signal."""
+        if not self.linklog:
+            return
+        try:
+            t = time.gmtime()
+            rssi = self.wlan.status("rssi") if self.wlan is not None and self.wlan.isconnected() else None
+            line = "%04d-%02d-%02d %02d:%02d:%02dZ %s, rssi %s\n" % (t[0], t[1], t[2], t[3], t[4], t[5], text,
+                                                               "-" if rssi is None else rssi)
+            try:
+                size = os.stat(self.linklog)[6]
+            except OSError:
+                size = 0
+            if size > LINKLOG_MAX:  # keep the newer half
+                with open(self.linklog) as f:
+                    keep = f.read()[-(LINKLOG_MAX // 2):]
+                keep = keep[keep.find("\n") + 1:]
+                with open(self.linklog, "w") as f:
+                    f.write(keep)
+            with open(self.linklog, "a") as f:
+                f.write(line)
+        except Exception as e:  # noqa: BLE001 - a full or read-only file system must not stop the link
+            self._error("linklog %s" % e)
+
+    def _wifi_tune(self, connected=False):
+        """Power save off (it delays incoming signals 100-800 ms, as on the Arduino boards) and the send power
+        from the config: small ESP32-C3 boards such as iris lose sent packets at full power until TCP stalls.
+        Before connecting also the 802.11 modes from the config (changing them while connected drops Wi-Fi)."""
+        if self.wifi_mode and not connected:
+            try:
+                import network
+                bits = 0
+                for c, m in (("b", "MODE_11B"), ("g", "MODE_11G"), ("n", "MODE_11N")):
+                    if c in self.wifi_mode:
+                        bits |= getattr(network, m)
+                if bits and self.wlan.config("protocol") != bits:
+                    self.wlan.config(protocol=bits)
+            except Exception as e:  # noqa: BLE001 - firmware without it: keep the chip's modes
+                self._error("wifi mode %s" % e)
+        try:
+            self.wlan.config(pm=self.wlan.PM_NONE)
+        except Exception as e:  # noqa: BLE001 - older firmware: keep going
+            self._error("wifi pm %s" % e)
+        if self.txpower:
+            try:
+                self.wlan.config(txpower=self.txpower)
+            except Exception as e:  # noqa: BLE001
+                self._error("wifi txpower %s" % e)
 
     def _retry(self, now):
         self.next_try = time.ticks_add(now, self.backoff)
@@ -328,8 +412,10 @@ class ReplLink:
             self.boho = Boho()
             self.boho.set_id8(self.auth[0])
             self.boho.set_key(self.auth[1])
-        self.opened_at = self.last_rx = now
+        self.opened_at = self.last_rx = self.pong_at = now
         self.ping_at = 0
+        self.ping_queued = self.sent_since_pong = False
+        self.tx_moved_at = now
 
     # ---- announcing the board (device rules: #search, $name, $ui, $state)
 
@@ -381,7 +467,8 @@ class ReplLink:
             return
         self._subscribe("#search")
         if self.device is not None:
-            self.device.announce(self._publish)
+            # logged in without a configured name: no $name, so the registered name the server keeps stays
+            self.device.announce(self._publish, None if self.auth else "MicroPython")
         else:
             # $name is required by the device rules: apps (and finders) leave out a device without one. A logged-in
             # board without a configured name keeps the registered name the server stores for its CID.
@@ -400,15 +487,23 @@ class ReplLink:
             except OSError:
                 pass
             self._error("drop: " + why)
+            if why not in ("redirect", "stopped", "auth clear"):
+                up = ("online %ds" % (time.ticks_diff(time.ticks_ms(), self.online_at) // 1000)) if self.ready and self.online_at is not None else "not ready"
+                self._log("drop %s, %s" % (why, up))
+                self.down_at = time.ticks_ms()
         self.sock = None
         self.ready = False
         self.cid = ""
         self._end_session()
         self._retry(time.ticks_ms())
 
-    def _send(self, packet, encrypt=True):
+    def _send(self, packet, encrypt=True, ping=False):
         if encrypt and self.boho is not None and self.boho.is_authorized:
             packet = self.boho.encrypt_488(packet)
+        if not self.tx:
+            self.tx_moved_at = time.ticks_ms()  # the stall clock starts with the first waiting byte
+        if not ping and packet != PONG_PACKET:
+            self.sent_since_pong = True
         self.tx += cong.pack(packet)
 
     def _flush(self):
@@ -425,6 +520,10 @@ class ReplLink:
         if n:
             self.stats["tx"] += 1
             self.tx = self.tx[n:]
+            self.tx_moved_at = time.ticks_ms()
+            if self.ping_queued and not self.tx:  # the PING has left: start waiting for its PONG now
+                self.ping_queued = False
+                self.ping_at = self.tx_moved_at
 
     # ---- packets
 
@@ -454,6 +553,13 @@ class ReplLink:
             self.cid = p[1:].decode()
             self.ready = True
             self.backoff = 1000
+            self.online_at = time.ticks_ms()
+            if not self.logged_start:
+                self.logged_start = True
+                self._log("online %s (start)" % self.cid)
+            elif self.down_at is not None:
+                self._log("online again after %ds" % (time.ticks_diff(self.online_at, self.down_at) // 1000))
+            self.down_at = None
             self._announce()
         elif t == IOMsg.SIGNAL:
             s = decode_signal(p)
@@ -471,7 +577,12 @@ class ReplLink:
                     except Exception as e:  # noqa: BLE001 - the board's code must not stop the link
                         self._error("listener %s: %s" % (s.tag, e))
         elif t == IOMsg.PING:
-            self._send(bytes([IOMsg.PONG]), False)
+            self._send(PONG_PACKET, False)
+        elif t == IOMsg.PONG:
+            self.ping_at = 0
+            self.ping_queued = False
+            self.pong_at = time.ticks_ms()
+            self.sent_since_pong = False
         elif t == IOMsg.SERVER_REDIRECT:
             hp = cong.parse_redirect(p)
             if hp:
@@ -623,6 +734,26 @@ class ReplLink:
             except OSError:
                 pass
 
+    def _info(self):
+        """Memory, file space and the link's own CPU share since the last call, for the web IDE's usage panel.
+        A few ms (one gc.collect); the IDE asks every 30 s at most."""
+        import gc
+        gc.collect()
+        now = time.ticks_ms()
+        window = max(1, time.ticks_diff(now, self.busy_since))
+        cpu = self.busy_us / (10 * window)  # % of the window spent in _tick
+        self.busy_us, self.busy_since = 0, now
+        st = os.statvfs("/")
+        body = {"op": "info", "ok": True, "heap": [gc.mem_alloc(), gc.mem_free()], "fs": [st[0] * st[2], st[0] * st[3]],
+                "cpu": int(cpu * 10) / 10, "window_ms": window}
+        try:
+            import esp32
+            r = esp32.idf_heap_info(esp32.HEAP_DATA)
+            body["idf"] = [sum(x[0] for x in r), sum(x[1] for x in r), sum(x[3] for x in r)]
+        except Exception:  # noqa: BLE001 - not an ESP32 (unix port): no system heap figures
+            pass
+        return body
+
     def _fs(self, raw):
         try:
             req = json.loads(raw)
@@ -678,6 +809,8 @@ class ReplLink:
             elif op == "rename":
                 os.rename(req["path"], req["to"])
                 self._fs_reply({"op": op, "ok": True})
+            elif op == "info":
+                self._fs_reply(self._info())
             else:
                 self._fs_reply({"op": op, "ok": False, "error": "unknown op"})
         except (OSError, KeyError, ValueError, TypeError) as e:
@@ -728,9 +861,10 @@ def _now_s():
 link = None
 
 
-def start(url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True):
+def start(url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True, txpower=None, wifi_mode=None,
+          linklog=True):
     """Starts the link and returns at once; the REPL keeps the main thread. ``key``: the REPL key
     (bytes, 32 recommended). None: no remote REPL (no dupterm, @repl refused), the board can still be a device."""
     global link
-    link = ReplLink(url, key, auth, period_ms, wifi, name, announce).start()
+    link = ReplLink(url, key, auth, period_ms, wifi, name, announce, txpower, wifi_mode, linklog).start()
     return link
