@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iosignal"
+version = "0.1.0"
+description = "IOSignal client for Python: signals, device rules, and remote MicroPython boards"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Taeo Lee", email = "sixgen@gmail.com" }]
+keywords = ["iosignal", "iot", "websocket", "pubsub", "micropython", "esp32"]
+dependencies = ["websockets>=13"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: MicroPython",
+    "Topic :: Home Automation",
+    "Topic :: Internet",
+]
+
+[project.urls]
+Homepage = "https://iosignal.net"
+Documentation = "https://docs.iosignal.net"
+Repository = "https://github.com/remocons/iosignal-python"
+
+[project.scripts]
+iosignal-repl = "iosignal.replcli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iosignal"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "examples", "tools", "README.md", "README.ko.md", "LICENSE", "package.json"]

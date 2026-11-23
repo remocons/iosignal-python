@@ -1,0 +1,46 @@
+{
+  "urls": [
+    [
+      "iosignal/__init__.py",
+      "github:remocons/iosignal-python/src/iosignal/__init__.py"
+    ],
+    [
+      "iosignal/mbp.py",
+      "github:remocons/iosignal-python/src/iosignal/mbp.py"
+    ],
+    [
+      "iosignal/protocol.py",
+      "github:remocons/iosignal-python/src/iosignal/protocol.py"
+    ],
+    [
+      "iosignal/boho.py",
+      "github:remocons/iosignal-python/src/iosignal/boho.py"
+    ],
+    [
+      "iosignal/cong.py",
+      "github:remocons/iosignal-python/src/iosignal/cong.py"
+    ],
+    [
+      "iosignal/replproto.py",
+      "github:remocons/iosignal-python/src/iosignal/replproto.py"
+    ],
+    [
+      "iosignal/replpoll.py",
+      "github:remocons/iosignal-python/src/iosignal/replpoll.py"
+    ],
+    [
+      "iosignal/board.py",
+      "github:remocons/iosignal-python/src/iosignal/board.py"
+    ],
+    [
+      "iosignal/mdevice.py",
+      "github:remocons/iosignal-python/src/iosignal/mdevice.py"
+    ],
+    [
+      "iosignal/x25519.py",
+      "github:remocons/iosignal-python/src/iosignal/x25519.py"
+    ]
+  ],
+  "deps": [],
+  "version": "0.1.0"
+}

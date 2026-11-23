@@ -1,0 +1,472 @@
+{
+ "generator": "tools/js-vectors.mjs",
+ "numberText": [
+  [
+   0,
+   "0"
+  ],
+  [
+   0,
+   "0"
+  ],
+  [
+   1,
+   "1"
+  ],
+  [
+   -1,
+   "-1"
+  ],
+  [
+   42,
+   "42"
+  ],
+  [
+   3.5,
+   "3.5"
+  ],
+  [
+   -0.25,
+   "-0.25"
+  ],
+  [
+   0.1,
+   "0.1"
+  ],
+  [
+   0.3333333333333333,
+   "0.3333333333333333"
+  ],
+  [
+   123456789012,
+   "123456789012"
+  ],
+  [
+   9007199254740992,
+   "9007199254740992"
+  ],
+  [
+   10000000000000000,
+   "10000000000000000"
+  ],
+  [
+   100000000000000000000,
+   "100000000000000000000"
+  ],
+  [
+   1e+21,
+   "1e+21"
+  ],
+  [
+   1.5e+300,
+   "1.5e+300"
+  ],
+  [
+   0.000001,
+   "0.000001"
+  ],
+  [
+   1e-7,
+   "1e-7"
+  ],
+  [
+   0.00001,
+   "0.00001"
+  ],
+  [
+   1.25e-10,
+   "1.25e-10"
+  ],
+  [
+   -2.5e-8,
+   "-2.5e-8"
+  ],
+  [
+   123.456,
+   "123.456"
+  ]
+ ],
+ "mba": [
+  {
+   "args": [
+    "a",
+    42,
+    3.5,
+    true,
+    {
+     "$hex": "010203"
+    },
+    {
+     "x": 1
+    }
+   ],
+   "hex": "613432332e35010102037b2278223a317d5b5b302c2253222c302c315d2c5b312c224e222c312c325d2c5b322c224e222c332c335d2c5b332c2221222c362c315d2c5b342c2242222c372c335d2c5b352c224f222c31302c375d5d004a"
+  },
+  {
+   "args": [
+    "",
+    {
+     "$hex": ""
+    },
+    false,
+    null
+   ],
+   "hex": "006e756c6c5b5b302c2253222c302c305d2c5b312c2242222c302c305d2c5b322c2221222c302c315d2c5b332c224f222c312c345d5d0031"
+  },
+  {
+   "args": [
+    "한글 \"따옴표\" \\ \n탭\t",
+    {
+     "키": [
+      "값",
+      1,
+      null,
+      true
+     ],
+     "nested": {
+      "a": []
+     }
+    }
+   ],
+   "hex": "ed959ceab8802022eb94b0ec98b4ed919c22205c200aed83ad097b22ed82a4223a5b22eab092222c312c6e756c6c2c747275655d2c226e6573746564223a7b2261223a5b5d7d7d5b5b302c2253222c302c32365d2c5b312c224f222c32362c34355d5d001c"
+  },
+  {
+   "args": [
+    [
+     1,
+     "a",
+     [
+      2
+     ]
+    ],
+    -7,
+    0.1
+   ],
+   "hex": "5b312c2261222c5b325d5d2d37302e315b5b302c224f222c302c31315d2c5b312c224e222c31312c325d2c5b322c224e222c31332c335d5d0028"
+  },
+  {
+   "args": [
+    0,
+    0,
+    1,
+    -1,
+    42,
+    3.5,
+    -0.25,
+    0.1,
+    0.3333333333333333,
+    123456789012,
+    9007199254740992,
+    10000000000000000,
+    100000000000000000000,
+    1e+21,
+    1.5e+300,
+    0.000001,
+    1e-7,
+    0.00001,
+    1.25e-10,
+    -2.5e-8,
+    123.456
+   ],
+   "hex": "3030312d313432332e352d302e3235302e31302e3333333333333333333333333333333331323334353637383930313239303037313939323534373430393932313030303030303030303030303030303031303030303030303030303030303030303030303031652b3231312e35652b333030302e30303030303131652d37302e3030303031312e3235652d31302d322e35652d383132332e3435365b5b302c224e222c302c315d2c5b312c224e222c312c315d2c5b322c224e222c322c315d2c5b332c224e222c332c325d2c5b342c224e222c352c325d2c5b352c224e222c372c335d2c5b362c224e222c31302c355d2c5b372c224e222c31352c335d2c5b382c224e222c31382c31385d2c5b392c224e222c33362c31325d2c5b31302c224e222c34382c31365d2c5b31312c224e222c36342c31375d2c5b31322c224e222c38312c32315d2c5b31332c224e222c3130322c355d2c5b31342c224e222c3130372c385d2c5b31352c224e222c3131352c385d2c5b31362c224e222c3132332c345d2c5b31372c224e222c3132372c375d2c5b31382c224e222c3133342c385d2c5b31392c224e222c3134322c375d2c5b32302c224e222c3134392c375d5d0124"
+  }
+ ],
+ "typed": {
+  "fields": [
+   [
+    "u8",
+    "8",
+    255
+   ],
+   [
+    "i8",
+    "I8",
+    -128
+   ],
+   [
+    "u16",
+    "16",
+    65535
+   ],
+   [
+    "u16l",
+    "16L",
+    513
+   ],
+   [
+    "i16",
+    "I16",
+    -2
+   ],
+   [
+    "i16l",
+    "I16L",
+    -300
+   ],
+   [
+    "u32",
+    "32",
+    4000000000
+   ],
+   [
+    "u32l",
+    "32L",
+    1
+   ],
+   [
+    "i32",
+    "I32",
+    -5
+   ],
+   [
+    "i32l",
+    "I32L",
+    -70000
+   ],
+   [
+    "f",
+    "F",
+    1.5
+   ],
+   [
+    "fl",
+    "FL",
+    -0.75
+   ],
+   [
+    "n",
+    "N",
+    2.5
+   ],
+   [
+    "name \"q\"",
+    "8",
+    1
+   ],
+   [
+    "#hidden",
+    "8",
+    9
+   ]
+  ],
+  "hex": "ff80ffff0102fffed4feee6b280001000000fffffffb90eefeff3fc00000000040bf322e3501095b5b227538222c2238222c302c315d2c5b226938222c224938222c312c315d2c5b22753136222c223136222c322c325d2c5b227531366c222c2231364c222c342c325d2c5b22693136222c22493136222c362c325d2c5b226931366c222c224931364c222c382c325d2c5b22753332222c223332222c31302c345d2c5b227533326c222c2233324c222c31342c345d2c5b22693332222c22493332222c31382c345d2c5b226933326c222c224933324c222c32322c345d2c5b2266222c2246222c32362c345d2c5b22666c222c22464c222c33302c345d2c5b226e222c224e222c33342c335d2c5b226e616d65205c22715c22222c2238222c33372c315d5d00ff"
+ },
+ "signals": [
+  {
+   "tag": "room",
+   "args": [],
+   "hex": "d004726f6f6d00"
+  },
+  {
+   "tag": "room",
+   "args": [
+    "hi"
+   ],
+   "hex": "d004726f6f6d01686900"
+  },
+  {
+   "tag": "room",
+   "args": [
+    42
+   ],
+   "hex": "d004726f6f6d01343200"
+  },
+  {
+   "tag": "room",
+   "args": [
+    2.5
+   ],
+   "hex": "d004726f6f6d01322e3500"
+  },
+  {
+   "tag": "room",
+   "args": [
+    {
+     "$hex": "00ff"
+    }
+   ],
+   "hex": "d004726f6f6d0200ff"
+  },
+  {
+   "tag": "room",
+   "args": [
+    {
+     "value": 42
+    }
+   ],
+   "hex": "d004726f6f6d037b2276616c7565223a34327d"
+  },
+  {
+   "tag": "room",
+   "args": [
+    null
+   ],
+   "hex": "d004726f6f6d036e756c6c"
+  },
+  {
+   "tag": "room",
+   "args": [
+    [
+     1,
+     "a"
+    ]
+   ],
+   "hex": "d004726f6f6d035b312c2261225d"
+  },
+  {
+   "tag": "room",
+   "args": [
+    1,
+    "a"
+   ],
+   "hex": "d004726f6f6d045b312c2261225d"
+  },
+  {
+   "tag": "room",
+   "args": [
+    "a",
+    {
+     "$hex": "0102"
+    },
+    3
+   ],
+   "hex": "d004726f6f6d05610102335b5b302c2253222c302c315d2c5b312c2242222c312c325d2c5b322c224e222c332c315d5d0025"
+  },
+  {
+   "tag": "방#온도",
+   "args": [
+    "값"
+   ],
+   "hex": "d00aebb0a923ec98a8eb8f8401eab09200"
+  },
+  {
+   "tag": "A@status",
+   "args": [
+    "켜짐"
+   ],
+   "hex": "d008414073746174757301ecbc9ceca79000"
+  },
+  {
+   "tag": "#notify",
+   "args": [
+    "1411"
+   ],
+   "hex": "d007236e6f74696679013134313100"
+  },
+  {
+   "tag": "@",
+   "args": [
+    "on"
+   ],
+   "hex": "d00140016f6e00"
+  }
+ ],
+ "bohoSession": {
+  "key": "dev-키-1",
+  "id": "device-01",
+  "challenge": "b04aa0016ba000544a29495a29",
+  "authReq": "b16465766963652d301bf1702b649d8da182782ad9a54c1b0052218e3cf171dc07c6937367d66681be7bd01396",
+  "authRes": "b22e6fa43064dbad27495b1bf643ad695fb97440ef4f40be0ba4ddf1f230393909",
+  "wrongAuthReq": "b16465766963652d3037536c5ee8787b14e36162e155b377e5302501be362bb25aa18ef05b9ec61542f05d82dd",
+  "clientToServer": [
+   [
+    "",
+    "b8000000004aa0016ba2000100d017dacbaab07a41"
+   ],
+   [
+    "hello",
+    "b8050000004aa0016ba2000200561df57658b4dec8df47019ff6"
+   ],
+   [
+    "안녕 IOSignal",
+    "b80f0000004aa0016ba20003005c67922268e095ad35dea236ae2aa442f91a06a49b8b16"
+   ],
+   [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "b81f0000004aa0016ba2000400d09d70c9daf1e74b122691f28866842acceaaf92f1de9445b61bde2107b404639055c833a46bb0"
+   ],
+   [
+    "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "b8200000004aa0016ba20005004efa5aee3c9d7738fa97fe8c0713bc5fd7e4c3b355613e895467aab3763b583e276d8387bff12934"
+   ],
+   [
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "b8210000004aa0016ba2000600833ab6d6b70c8a897618f3539ef62e22ee10e59d2471b23dc4ae851aaa75033988fa871cfeff4d855b"
+   ],
+   [
+    "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+    "b8640000004aa0016ba20007003a5aa89f4a55676b3fe1325d4f3d459b1cff613600f2f5aaed3f1ffae730dd9ad50b89e4c921db7145c5644a163ca0ffc5fe320663468f450407f385f7cc39bacca60a6bd852856b725e70c8ff9c23b7ae8172c922ac2737d763c625d734ad1ed8203ed592a1fa931ee79c0e"
+   ]
+  ],
+  "serverToClient": [
+   [
+    "",
+    "b8000000004aa0016ba2000100a0574bc1d4aa4a2d"
+   ],
+   [
+    "hello",
+    "b8050000004aa0016ba20002003b7dc8782b30fc47d016010513"
+   ],
+   [
+    "안녕 IOSignal",
+    "b80f0000004aa0016ba3000300ff46d85610ed49d4928424e90471a62f50ed4fcdf08c3d"
+   ],
+   [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "b81f0000004aa0016ba3000400fb7ca578ce3dc64e442ecea8cf0973eb5f3dea9091d95822b9d73a96cd4ead22ac466e3259a626"
+   ],
+   [
+    "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "b8200000004aa0016ba30005004ceb4a826e48eae484c34bd872fc43643c9b0023df30d2b653ddf7ce6c96e11db037fdcf20eac0b3"
+   ],
+   [
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "b8210000004aa0016ba3000600a4667d9fe9b75264e7f48ca3129c2873f9eaceed78fe8df536dca681ec0a8ccdfe62a602142cbe82a1"
+   ],
+   [
+    "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+    "b8640000004aa0016ba3000700f91ab688af4d9e5adf30222f5ae1012042a2c173585e8fdecc71a1cc0c0eeb0fd5e98d3b8451ae4f88a9d84a3417331e7271b034dc6bcf0511443309dc1f909869142f907dc0c28a52d7e2bdb181b95e24854fef888f216b76b5059f0de0ea064cd33bb91063a3d81c11482f"
+   ]
+  ]
+ },
+ "bohoPacks": {
+  "key": "pack-key",
+  "e2eKey": "e2e-키",
+  "packs": [
+   [
+    "",
+    "b6000000004aa0016ba300010055bee31b41c89a5b2fa34cd8"
+   ],
+   [
+    "a5",
+    "b6010000004aa0016ba30002005c67296a9d648dfacc917ff9b4"
+   ],
+   [
+    "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "b61f0000004aa0016ba30003003ceda290341a2c5d7ee88680321ed6ad4a02e886f813e4287a0d045e3d5f10357aa880d4c2201b8fbba4af"
+   ],
+   [
+    "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "b6200000004aa0016ba3000400ce0be98d0edacf52ec753603bc71b9da10804801201ce1820449237263055bdc1b153f0cd0bb871e3018ce7a"
+   ],
+   [
+    "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "b6210000004aa0016ba3000500e07c95c5db742a01d8629b3e8a70d49c8c24aca1abf9dd5d15c319060d324eb26ab0ba7fe1a87b75a49a1a783f"
+   ],
+   [
+    "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "b6000400004aa0016ba40006009488715ac4aec36c6f24c71f8e09c7dce59f67c0f16607f935a7756c8311d7389abca969f4a2684b9ddab8ac21037c30a35e1ee579bf898d059ee2d17679c4d600468ecdc82e2d0161665aa38d3c6b179cc5563fe3ba84c5bb2503c1efbd3714f326558e3dbe121c0698ca4c924ab53df078ee78efb65c411b5970b2373b1401630118a8359d1b0e50e16b26044674e706a2be5e40ad58a35cf870eb42830b4a2fabf8da6813cf6a649d244b5fcffdc32e842a65b4561687bb0fb9c515327640b962f8e5032621a10601a3b565bec315bd054f032bdd22c5f21863c57c72238adb7505dbd181a03a4a43da8e466a34fb80c62ae6c1cb9f6c452d1e5ecd44f456991108a28735763139f4823a432d6f354fe152ca5d7d302406c88c8451eeb3ecefb29bbd7eee91d1c440cf65c3c83645e9af65f79210e8c3d3055756af89d537e384155c4934fe7e0615a67813c294ee22201ff137314eab79e0d0aabb04fd5b5ba8fe5d24af129f2c016c4f7533fc1c7b8fcc4c313f3df9a4955982379fe69e6b5052ae3b856c821b84e8cb40d39ad27bf68b088e79202cea074006c17cae2fb17cd2db273d0015a59633fa9c0abcacc39d767118f187a92fda09ec94f6ab0873e0b2679443901305be384f7820816027b5ec0e66c4c3eb094036664271d572227c529912dd228b1dfe116a3104fbf684fcc0645d80dbc21772baee283ca5421f75e3a92b5e08e2f2dd4fcbdd8a7ff662f7eade1fbb1eb6f4f23567ddc54f8022bff59a996076338963bd83f8549d73922f89494416cd8fcd47c00c5231e087b35d5045c44ad6932aeadf6386525528d59049ef33803b99023256aeceec8c68b4d6b5c5afdc5c66b3c98138a2c0d59c7a9df901c26001e3c2fd8c778fdc34eda1adfa75c45e5953bbb8c3d24815b82bb2352dab831980c12dbba728034229e60b7b30cffdfe5e9a58ec7c12b78939f549a11c12699b21c49af1738f2fd1e81acb059ac28bd74f491cd67f894f29355981cf8bf05cda31189c67995f80986efa3128d5c0cda683b0cb533b78db00364d4b5b317b5d8b490ed8d9d2ed9bcbc9ae62b75503751db7abb689649cd0b6126f4ebc8b98859c5e2cf86d699a2be47cdbcb1e458393fd6746b5940666d6531aa0773615671f408aedf7b4073e1f1eebb3b24b22daad8b01dbee59c78e21e70191673584e2136c8753813f5b5a763d8cbebad27c9ed7e72255a2ac7b70c8c833128046c9ac895e01aa7286d245b231a5aed52c5f9328122e59dca9793baf7e014244b6b9689f3021ed1653ceb9cdafac152cd4e250e9b3e3fc8011bb0b1454ecd4d1ffc7ba0faaa569dacbaef3bc2e841ffc6f87da6ee573e45a95f3551dc98d7606725345220a802ad084ae89ef5c7c14494bb03cf77d260a528923b82d4f688f4586b9c0f8d144fb0a5198c483f1d03569140564db867845268d6ab3"
+   ]
+  ],
+  "e2e": [
+   [
+    "",
+    "b6000000004aa0016ba40007005f5d6523600afc7a8a2bafdd"
+   ],
+   [
+    "secret 비밀",
+    "b60d0000004aa0016ba4000800f4dcd3e127a3376da9796da110f35f83fac423a5f3c13bef52"
+   ]
+  ]
+ }
+}
