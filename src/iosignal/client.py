@@ -224,7 +224,9 @@ class IOSignal:
         self._next_connect_at = 0.0
         self._last_rx = time.monotonic()
         self._ping_sent_at = 0.0
+        self._pings_out = 0  # PINGs sent on this socket that no PONG has answered yet
         self._ping_server_waiting = False
+        self._send_error = ""  # why the last send was refused: "over size" or "not connected"
         self._hello_pending_since = 0.0
         self._closed_for_good = False
 
@@ -312,6 +314,9 @@ class IOSignal:
         self._state_waiters.append(entry)
         try:
             return await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            # Python 3.10: asyncio.TimeoutError is not the builtin TimeoutError the docs promise.
+            raise TimeoutError(f"state not reached in {timeout:g} s") from None
         finally:
             if entry in self._state_waiters:
                 self._state_waiters.remove(entry)
@@ -444,8 +449,10 @@ class IOSignal:
 
     def ping(self) -> bool:
         sent = self._send_raw(bytes([IOMsg.PING]))
-        if sent and not self._ping_sent_at:
-            self._ping_sent_at = time.monotonic()
+        if sent:
+            self._pings_out += 1
+            if not self._ping_sent_at:
+                self._ping_sent_at = time.monotonic()
         return sent
 
     async def ping_server(self, timeout: float = 3.0) -> float:
@@ -464,9 +471,13 @@ class IOSignal:
             raise PingError("BUSY", "already waiting for a pong")
         self._ping_server_waiting = True
         fut = asyncio.get_running_loop().create_future()
+        earlier = self._pings_out  # PONGs for PINGs already on the way (keepalive) come first
 
         def on_pong() -> None:
-            if not fut.done():
+            nonlocal earlier
+            if earlier > 0:
+                earlier -= 1
+            elif not fut.done():
                 fut.set_result(None)
 
         def on_state(state: State) -> None:
@@ -509,7 +520,7 @@ class IOSignal:
                           mbp.string("topic", topic), arg_fields)
         if not self._send_enc(packet):
             self._pending.pop(mid, None)
-            raise RpcError("not connected")
+            raise RpcError(self._send_error or "not connected")
         try:
             return await asyncio.wait_for(asyncio.shield(fut), timeout if timeout is not None else self.call_timeout)
         except asyncio.TimeoutError:
@@ -541,17 +552,29 @@ class IOSignal:
         return boho.decrypt_e2e(data, key)
 
     def _send_enc(self, packet: bytes) -> bool:
-        """Encrypts signals, subscriptions, IAM and calls on a logged-in ws:// session."""
+        """Encrypts signals, subscriptions, IAM and calls on a logged-in ws:// session.
+
+        A ws:// connection that logs in sends none of them before the login is done: they would go out
+        in plain text (False, as when not connected).
+        """
         if not self.is_encrypted:
+            if self._boho is not None and not self._tls and self.state != State.READY:
+                self._send_error = "not connected"
+                return False
             return self._send_raw(packet)
         enc = self._boho.encrypt_488(packet)
-        return enc is not None and self._send_raw(enc)
+        if enc is None:
+            self._send_error = "not connected"
+            return False
+        return self._send_raw(enc)
 
     def _send_raw(self, packet: bytes) -> bool:
         if len(packet) > self.signal_size_limit:
+            self._send_error = "over size"
             self._emit("over_size")
             return False
         if self.state not in _SENDABLE or self._queue is None:
+            self._send_error = "not connected"
             return False
         self._queue.put_nowait(packet)
         self.tx += 1
@@ -580,6 +603,7 @@ class IOSignal:
                 return
             self._last_rx = time.monotonic()
             self._ping_sent_at = 0.0
+            self._pings_out = 0
             self._set_state(State.OPEN)
             writer = asyncio.get_running_loop().create_task(self._write(transport, queue))
             while True:
@@ -627,6 +651,7 @@ class IOSignal:
         self.cid = ""
         self._challenge = None
         self._ping_sent_at = 0.0
+        self._pings_out = 0
         self._hello_pending_since = 0.0
         if self._boho is not None:
             self._boho.deauthorize()
@@ -765,6 +790,8 @@ class IOSignal:
         elif t == IOMsg.PING:
             self._send_raw(bytes([IOMsg.PONG]))
         elif t == IOMsg.PONG:
+            if self._pings_out > 0:
+                self._pings_out -= 1
             self._emit("pong")
         elif t == IOMsg.QUOTA_LEVEL:
             if len(buffer) > 1:

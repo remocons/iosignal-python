@@ -327,6 +327,55 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
         await io.wait_for(State.READY, timeout=2)
         self.assertGreaterEqual(await io.ping_server(), 0.0)  # the guard was released
 
+    async def test_logged_in_ws_sends_nothing_plain_before_ready(self):
+        server = FakeServer()
+        io = self.make(server)
+        sent_at_open = []
+        io.on_event("state", lambda s: sent_at_open.append(io.signal("room#t", "secret"))
+                    if s == State.OPEN else None)
+        io.auth("dev1", "dev1").open()
+        await io.ready()
+        self.assertEqual([False], sent_at_open)
+        self.assertFalse(any(b"secret" in p for _, p in server.received))
+        self.assertTrue(io.signal("room#t", "after"))
+
+    async def test_ready_timeout_is_builtin_timeout_error(self):
+        server = FakeServer(hello=False)
+        io = self.make(server)
+        io.open()
+        with self.assertRaises(TimeoutError):
+            await io.ready(timeout=0.05)
+
+    async def test_ping_server_waits_past_earlier_pongs(self):
+        server = FakeServer()
+        io = self.make(server)
+        io.open()
+        await io.ready()
+        server.answer = False
+        io.ping()  # a keepalive PING still on the way
+        first = asyncio.ensure_future(io.ping_server(2))
+        await asyncio.sleep(0.01)
+        conn = next(iter(server.conns))
+        conn.push(bytes([IOMsg.PONG]))  # answers the earlier PING only
+        await asyncio.sleep(0.05)
+        self.assertFalse(first.done())
+        conn.push(bytes([IOMsg.PONG]))
+        self.assertGreaterEqual(await first, 0.0)
+
+    async def test_over_size_call_says_so(self):
+        server = FakeServer()
+        io = self.make(server)
+        io.open()
+        await io.ready()
+        io.max_message_bytes, io._quota_told = 100, True
+        with self.assertRaises(RpcError) as e:
+            await io.call("svc", "echo", b"x" * 200)
+        self.assertEqual("over size", str(e.exception))
+        io.close()
+        with self.assertRaises(RpcError) as e:
+            await io.call("svc", "echo", 1)
+        self.assertEqual("not connected", str(e.exception))
+
     async def test_no_hello_is_abandoned(self):
         server = FakeServer(hello=False)
         io = self.make(server, hello_timeout=0.05)

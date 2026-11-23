@@ -165,6 +165,15 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({"on": "1", "level": "80", "last": "unknown"}, lamp.state)
         self.assertEqual(["on", "level=80", "unknown"], lamp.commands)
 
+        # The program's own listener on a found device survives another search.
+        await devices.discover(app, wait=0.2)
+        self.assertIn(info.id + "@$state", app.subscriptions)
+        n = len(states)
+        devices.command(app, info, "off")
+        await until(lambda: len(states) > n)
+        self.assertEqual("on=0;level=80;last=unknown", states[-1])
+        self.assertNotIn("#notify", app.subscriptions)  # what only the search used is gone
+
     async def test_announce_order_and_panel(self):
         server = BusServer()
         io = await self.client(server)
@@ -217,6 +226,11 @@ class DeviceTest(unittest.IsolatedAsyncioTestCase):
         await app.ready()
         devices.command(app, devices.DeviceInfo("#lab", state="s1=0;s2=0"), "s2=1")
         await until(lambda: member.state.get("s2") == "1")
+        # A search from the member's own client leaves its #lab$state handler and subscription in place.
+        await devices.discover(a, wait=0.2)
+        self.assertIn("#lab$state", a.subscriptions)
+        devices.command(app, devices.DeviceInfo("#lab", state="s1=0;s2=1"), "s1=1")
+        await until(lambda: member.state.get("s1") == "1")
         with self.assertRaises(ValueError):
             Device(a, "x", channel="#lab")  # a group needs a type, panel or view
         with self.assertRaises(ValueError):

@@ -66,7 +66,15 @@ class IOSignal:
         if self._on_loop():
             coro.close()
             raise RuntimeError("cannot wait from a handler; use the asyncio client there")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return fut.result(timeout)
+        except concurrent.futures.TimeoutError:
+            if fut.done():  # the coroutine's own TimeoutError (the same class from Python 3.11)
+                raise
+            # Python 3.10: concurrent.futures.TimeoutError is not the builtin TimeoutError.
+            fut.cancel()
+            raise TimeoutError(f"no result in {timeout:g} s") from None
 
     # ---- state
 
@@ -131,11 +139,14 @@ class IOSignal:
             raise RuntimeError("shutdown() from a handler would deadlock")
         try:
             asyncio.run_coroutine_threadsafe(self.aio.aclose(), self._loop).result(5)
+        except concurrent.futures.TimeoutError:
+            _client.log.warning("iosignal: tasks did not end in 5 s; stopping the loop anyway")
         finally:
             self._closed = True
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(5)
-            self._loop.close()
+            if not self._thread.is_alive():  # closing a loop that still runs raises
+                self._loop.close()
 
     def __enter__(self) -> IOSignal:
         if self.state in (State.CLOSED, State.STOP) and self.aio.url:

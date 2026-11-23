@@ -61,6 +61,36 @@ class PacketsTest(unittest.TestCase):
         self.assertEqual(2, len(batches))
 
 
+class TextNulTest(unittest.TestCase):
+    def test_args_remove_one_nul_as_js(self):
+        s = decode_signal(signal_packet("t", PayloadType.TEXT, text_payload("ab\x00")))
+        self.assertEqual(["ab\x00"], s.args)  # JS decodeSignalArgs removes only the sender's NUL
+        self.assertEqual(["ab"], decode_signal(signal_packet("t", PayloadType.TEXT, text_payload("ab"))).args)
+
+
+class CongParserTest(unittest.TestCase):
+    def test_large_frame_in_small_chunks(self):
+        from iosignal.cong import Parser, pack
+        payload = bytes(range(256)) * 4096  # 1 MiB
+        wire = pack(b"x") + pack(payload) + pack(b"yz")
+        p = Parser(1 << 24)
+        out = []
+        for i in range(0, len(wire), 1000):
+            out += p.feed(wire[i:i + 1000])
+        self.assertEqual([b"x", payload, b"yz"], out)
+        self.assertEqual((b"", 0), (p.buf, p._need))
+
+    def test_frame_split_in_its_head_and_oversize_skip(self):
+        from iosignal.cong import Parser, pack
+        p = Parser(10)
+        wire = pack(b"a" * 300) + pack(b"ok")  # 300 > max_frame: skipped
+        out = []
+        for i in range(0, len(wire), 7):
+            out += p.feed(wire[i:i + 7])
+        self.assertEqual([b"ok"], out)
+        self.assertEqual(1, p.oversize)
+
+
 class PayloadTest(unittest.TestCase):
     def test_types_follow_js_parse_payload(self):
         self.assertEqual((PayloadType.EMPTY, b""), encode_payload())

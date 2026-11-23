@@ -66,6 +66,13 @@ class SyncTest(unittest.TestCase):
         io.ready()
         self.assertGreaterEqual(io.ping_server(), 0.0)
 
+    def test_ready_timeout_is_builtin_timeout_error(self):
+        server = FakeServer(hello=False)
+        io = self.make(server)
+        io.open()
+        with self.assertRaises(TimeoutError):
+            io.ready(timeout=0.05)
+
     def test_wrong_key(self):
         io = self.make(FakeServer())
         io.auth("dev1", "x").open()

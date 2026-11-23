@@ -361,10 +361,12 @@ async def discover(io: IOSignal, wait: float = 1.5, panels: bool = True, views: 
     unsubscribes and returns what an app would list. ``io`` must be ready.
     """
     found: dict[str, DeviceInfo] = {}
-    tags: list[str] = []
+    added: list[tuple[str, Callable]] = []  # (tag, handler) this search registered
+    # Subscriptions the program already had stay after the search, and so do its own handlers.
+    had = set(io.subscriptions)
 
     def follow(tag: str, handler: Callable[[Signal], None]) -> None:
-        tags.append(tag)
+        added.append((tag, handler))
         io.listen(tag, handler)
 
     def track(id_: str) -> None:
@@ -379,9 +381,10 @@ async def discover(io: IOSignal, wait: float = 1.5, panels: bool = True, views: 
         def on_ui(s: Signal) -> None:
             info.ui = parse_ui(s.text)
             info.ui_text = s.text or ""
-            if panels and info.ui.has_panel and p + "panel" not in tags:
+            followed = {t for t, _ in added}
+            if panels and info.ui.has_panel and p + "panel" not in followed:
                 follow(p + "panel", lambda s2: setattr(info, "panel", parse_object(s2.text)))
-            if views and info.ui.has_view and p + "view" not in tags:
+            if views and info.ui.has_view and p + "view" not in followed:
                 follow(p + "view", lambda s2: setattr(info, "view", parse_object(s2.text)))
 
         def on_state(s: Signal) -> None:
@@ -392,18 +395,16 @@ async def discover(io: IOSignal, wait: float = 1.5, panels: bool = True, views: 
         follow(p + "state", on_state)
 
     notify = lambda s: track(s.text) if s.args else None  # noqa: E731
-    io.listen("#notify", notify)
+    follow("#notify", notify)
     try:
         io.signal("#search")
         await asyncio.sleep(wait)
     finally:
-        io.off("#notify", notify)
-        io.unsubscribe("#notify")
-        for tag in tags:
-            io.off(tag)
-        if tags:
-            for i in range(0, len(tags), 8):
-                io.unsubscribe(",".join(tags[i:i + 8]))
+        for tag, handler in added:
+            io.off(tag, handler)
+        drop = [t for t in dict.fromkeys(t for t, _ in added) if t not in had]
+        for i in range(0, len(drop), 8):
+            io.unsubscribe(",".join(drop[i:i + 8]))
     return [d for d in found.values() if d.shown]
 
 

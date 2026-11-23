@@ -127,6 +127,9 @@ class Signal:
     @property
     def args(self) -> list:
         """Arguments as JS handlers receive them (see :func:`decode_payload`)."""
+        if self.type == PayloadType.TEXT:
+            # data already lost its trailing NUL in decode_signal; JS removes only one.
+            return [self.data.decode()]
         return decode_payload(self.type, self.data)
 
     def mba(self):

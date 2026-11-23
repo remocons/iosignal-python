@@ -28,6 +28,7 @@ class Parser:
 
     A frame larger than ``max_frame`` is skipped (its bytes are dropped without buffering) and counted in
     ``oversize``. An unknown type byte drops the buffer and counts in ``wrong``, as the JS parser does.
+    While a large frame is incomplete, chunks are kept in a list and joined once, not copied per chunk.
     """
 
     def __init__(self, max_frame: int = 1 << 20):
@@ -36,6 +37,9 @@ class Parser:
         self.skip = 0
         self.oversize = 0
         self.wrong = 0
+        self._parts = []  # chunks of an incomplete frame, with self.buf as the first one
+        self._have = 0
+        self._need = 0  # bytes (head + payload) the incomplete frame needs; 0 when none is pending
 
     def feed(self, chunk: bytes) -> list:
         if self.skip:
@@ -44,7 +48,15 @@ class Parser:
                 return []
             chunk = chunk[self.skip:]
             self.skip = 0
-        buf = self.buf + chunk if self.buf else bytes(chunk)
+        if self._need:
+            self._parts.append(bytes(chunk))
+            self._have += len(chunk)
+            if self._have < self._need:
+                return []
+            buf = b"".join(self._parts)
+            self._parts, self._have, self._need = [], 0, 0
+        else:
+            buf = self.buf + chunk if self.buf else bytes(chunk)
         frames = []
         while buf:
             head = _HEAD.get(buf[0])
@@ -65,6 +77,8 @@ class Parser:
                 buf = buf[head + size:]
                 continue
             if len(buf) < head + size:
+                self._parts, self._have, self._need = [buf], len(buf), head + size
+                buf = b""
                 break
             frames.append(buf[head:head + size])
             buf = buf[head + size:]
