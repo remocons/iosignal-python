@@ -2,7 +2,9 @@
 
 The same algorithm as the JS boho package (src/ascon.js), the Arduino BohoAscon.cpp and the Kotlin
 client. Runs on CPython 3.10+ and MicroPython 1.28+ (plain ints, ``int.from_bytes``, no typing).
-The state is five 64-bit words; bytes are loaded little-endian.
+The state is a 40-byte bytearray (five 64-bit words, little-endian). The permutation runs as native code on
+MicroPython boards that have the native emitter (``ascon_fast``, viper on 32-bit halves: no big integers), and as
+the pure Python ``_permute`` on five ints elsewhere (CPython, ports without viper).
 """
 
 __all__ = ["encrypt", "decrypt", "cxof128"]
@@ -25,16 +27,17 @@ def _ror(x, n):
 
 def _permute(s, rounds):
     x0, x1, x2, x3, x4 = s
-    for i in range(12 - rounds, 12):
-        x2 ^= _RC[i]
+    M = _M
+    for c in _RC[12 - rounds:]:
+        x2 ^= c
         x0 ^= x4
         x4 ^= x3
         x2 ^= x1
-        t0 = (x0 ^ _M) & x1
-        t1 = (x1 ^ _M) & x2
-        t2 = (x2 ^ _M) & x3
-        t3 = (x3 ^ _M) & x4
-        t4 = (x4 ^ _M) & x0
+        t0 = (x0 ^ M) & x1
+        t1 = (x1 ^ M) & x2
+        t2 = (x2 ^ M) & x3
+        t3 = (x3 ^ M) & x4
+        t4 = (x4 ^ M) & x0
         x0 ^= t1
         x1 ^= t2
         x2 ^= t3
@@ -43,71 +46,88 @@ def _permute(s, rounds):
         x1 ^= x0
         x0 ^= x4
         x3 ^= x2
-        x2 ^= _M
-        x0 ^= _ror(x0, 19) ^ _ror(x0, 28)
-        x1 ^= _ror(x1, 61) ^ _ror(x1, 39)
-        x2 ^= _ror(x2, 1) ^ _ror(x2, 6)
-        x3 ^= _ror(x3, 10) ^ _ror(x3, 17)
-        x4 ^= _ror(x4, 7) ^ _ror(x4, 41)
+        x2 ^= M
+        x0 ^= ((x0 >> 19) | (x0 << 45)) & M ^ ((x0 >> 28) | (x0 << 36)) & M
+        x1 ^= ((x1 >> 61) | (x1 << 3)) & M ^ ((x1 >> 39) | (x1 << 25)) & M
+        x2 ^= ((x2 >> 1) | (x2 << 63)) & M ^ ((x2 >> 6) | (x2 << 58)) & M
+        x3 ^= ((x3 >> 10) | (x3 << 54)) & M ^ ((x3 >> 17) | (x3 << 47)) & M
+        x4 ^= ((x4 >> 7) | (x4 << 57)) & M ^ ((x4 >> 41) | (x4 << 23)) & M
     s[0], s[1], s[2], s[3], s[4] = x0, x1, x2, x3, x4
 
 
-def _pad16(b):
-    return bytes(b) + b"\x01" + bytes(15 - len(b))
+def _permute_bytes(st, rounds):
+    s = [int.from_bytes(st[i:i + 8], "little") for i in (0, 8, 16, 24, 32)]
+    _permute(s, rounds)
+    for k in range(5):
+        st[8 * k:8 * k + 8] = s[k].to_bytes(8, "little")
+
+
+try:
+    from .ascon_fast import permute as _native
+
+    def _perm(st, rounds):
+        _native(st, 12 - rounds)
+
+    _t = bytearray(40)
+    _native(_t, 0)  # compiles and runs here, or the pure Python one is used
+    NATIVE = True
+except Exception:  # noqa: BLE001 - CPython, or a MicroPython port without the native emitter
+    _perm = _permute_bytes
+    NATIVE = False
+
+_AEAD_IV_B = _AEAD_IV.to_bytes(8, "little")
+_CXOF_IV_B = _CXOF_IV.to_bytes(8, "little")
+
+
+def _xor(st, off, data, start, n):
+    for k in range(n):
+        st[off + k] ^= data[start + k]
 
 
 def _start(key, nonce, ad):
     if len(key) != 16 or len(nonce) != 16:
         raise ValueError("key and nonce must be 16 bytes")
-    k0, k1 = _le(key[:8]), _le(key[8:])
-    s = [_AEAD_IV, k0, k1, _le(nonce[:8]), _le(nonce[8:])]
-    _permute(s, 12)
-    s[3] ^= k0
-    s[4] ^= k1
+    key = bytes(key)
+    st = bytearray(_AEAD_IV_B + key + bytes(nonce))
+    _perm(st, 12)
+    _xor(st, 24, key, 0, 16)
     if ad:
         i = 0
         while len(ad) - i >= 16:
-            s[0] ^= _le(ad[i:i + 8])
-            s[1] ^= _le(ad[i + 8:i + 16])
-            _permute(s, 8)
+            _xor(st, 0, ad, i, 16)
+            _perm(st, 8)
             i += 16
-        last = _pad16(ad[i:])
-        s[0] ^= _le(last[:8])
-        s[1] ^= _le(last[8:])
-        _permute(s, 8)
-    s[4] ^= _TOP
-    return s, k0, k1
+        rest = len(ad) - i
+        _xor(st, 0, ad, i, rest)
+        st[rest] ^= 0x01
+        _perm(st, 8)
+    st[39] ^= 0x80
+    return st, key
 
 
-def _finish(s, k0, k1):
-    s[2] ^= k0
-    s[3] ^= k1
-    _permute(s, 12)
-    return (s[3] ^ k0).to_bytes(8, "little") + (s[4] ^ k1).to_bytes(8, "little")
-
-
-def _rate(s):
-    return s[0].to_bytes(8, "little") + s[1].to_bytes(8, "little")
+def _finish(st, key):
+    _xor(st, 16, key, 0, 16)
+    _perm(st, 12)
+    _xor(st, 24, key, 0, 16)
+    return bytes(st[24:40])
 
 
 def encrypt(key, nonce, plain, ad=b"", tag_length=16):
     """Ascon-AEAD128: (ciphertext, the first ``tag_length`` bytes of the tag)."""
     plain = bytes(plain)
-    s, k0, k1 = _start(key, nonce, bytes(ad))
+    st, key = _start(key, nonce, bytes(ad))
     out = bytearray()
     i = 0
     while len(plain) - i >= 16:
-        s[0] ^= _le(plain[i:i + 8])
-        s[1] ^= _le(plain[i + 8:i + 16])
-        out += _rate(s)
-        _permute(s, 8)
+        _xor(st, 0, plain, i, 16)
+        out += st[0:16]
+        _perm(st, 8)
         i += 16
     rest = len(plain) - i
-    last = _pad16(plain[i:])
-    s[0] ^= _le(last[:8])
-    s[1] ^= _le(last[8:])
-    out += _rate(s)[:rest]
-    tag = _finish(s, k0, k1)
+    _xor(st, 0, plain, i, rest)
+    st[rest] ^= 0x01
+    out += st[0:rest]
+    tag = _finish(st, key)
     return bytes(out), tag[:tag_length]
 
 
@@ -116,24 +136,25 @@ def decrypt(key, nonce, cipher, ad, tag):
     if not 4 <= len(tag) <= 16:
         return None
     cipher = bytes(cipher)
-    s, k0, k1 = _start(key, nonce, bytes(ad))
-    out = bytearray()
+    st, key = _start(key, nonce, bytes(ad))
+    out = bytearray(len(cipher))
     i = 0
-    while len(cipher) - i >= 16:
-        c0, c1 = _le(cipher[i:i + 8]), _le(cipher[i + 8:i + 16])
-        out += (s[0] ^ c0).to_bytes(8, "little") + (s[1] ^ c1).to_bytes(8, "little")
-        s[0], s[1] = c0, c1
-        _permute(s, 8)
-        i += 16
-    rest = len(cipher) - i
-    r = bytearray(_rate(s))
-    for k in range(rest):
-        c = cipher[i + k]
-        out.append(r[k] ^ c)
-        r[k] = c
-    r[rest] ^= 0x01
-    s[0], s[1] = _le(r[:8]), _le(r[8:])
-    full = _finish(s, k0, k1)
+    n = len(cipher)
+    while i < n:
+        take = 16 if n - i >= 16 else n - i
+        for k in range(take):
+            c = cipher[i + k]
+            out[i + k] = st[k] ^ c
+            st[k] = c
+        if take == 16:
+            _perm(st, 8)
+            i += 16
+        else:
+            i += take
+            break
+    rest = n % 16
+    st[rest] ^= 0x01
+    full = _finish(st, key)
     diff = 0
     for a, b in zip(full[:len(tag)], tag):
         diff |= a ^ b
@@ -142,15 +163,16 @@ def decrypt(key, nonce, cipher, ad, tag):
     return bytes(out)
 
 
-def _absorb8(s, data):
+def _absorb8(st, data):
     i = 0
     while len(data) - i >= 8:
-        s[0] ^= _le(data[i:i + 8])
-        _permute(s, 12)
+        _xor(st, 0, data, i, 8)
+        _perm(st, 12)
         i += 8
-    last = bytes(data[i:]) + b"\x01" + bytes(7 - (len(data) - i))
-    s[0] ^= _le(last)
-    _permute(s, 12)
+    rest = len(data) - i
+    _xor(st, 0, data, i, rest)
+    st[rest] ^= 0x01
+    _perm(st, 12)
 
 
 def cxof128(data, out_length, custom=b""):
@@ -158,15 +180,15 @@ def cxof128(data, out_length, custom=b""):
     custom = bytes(custom)
     if len(custom) > 256:
         raise ValueError("custom must be at most 256 bytes")
-    s = [_CXOF_IV, 0, 0, 0, 0]
-    _permute(s, 12)
-    s[0] ^= len(custom) * 8
-    _permute(s, 12)
-    _absorb8(s, custom)
-    _absorb8(s, bytes(data))
+    st = bytearray(_CXOF_IV_B + bytes(32))
+    _perm(st, 12)
+    _xor(st, 0, (len(custom) * 8).to_bytes(8, "little"), 0, 8)
+    _perm(st, 12)
+    _absorb8(st, custom)
+    _absorb8(st, bytes(data))
     out = bytearray()
     while len(out) < out_length:
         if out:
-            _permute(s, 12)
-        out += s[0].to_bytes(8, "little")
+            _perm(st, 12)
+        out += st[0:8]
     return bytes(out[:out_length])

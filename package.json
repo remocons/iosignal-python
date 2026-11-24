@@ -17,6 +17,10 @@
       "github:remocons/iosignal-python/src/iosignal/ascon.py"
     ],
     [
+      "iosignal/ascon_fast.py",
+      "github:remocons/iosignal-python/src/iosignal/ascon_fast.py"
+    ],
+    [
       "iosignal/boho.py",
       "github:remocons/iosignal-python/src/iosignal/boho.py"
     ],
@@ -46,5 +50,5 @@
     ]
   ],
   "deps": [],
-  "version": "0.2.0"
+  "version": "0.2.1"
 }
