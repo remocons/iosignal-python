@@ -11,6 +11,8 @@
     "examples/virtual_lamp.py",
     "src/iosignal/__init__.py",
     "src/iosignal/ascon.py",
+    "tools/gen_ascon_fast.py",
+    "src/iosignal/ascon_fast.py",
     "src/iosignal/board.py",
     "src/iosignal/boho.py",
     "src/iosignal/client.py",
