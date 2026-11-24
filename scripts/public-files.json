@@ -10,6 +10,7 @@
     "examples/virtual_home.py",
     "examples/virtual_lamp.py",
     "src/iosignal/__init__.py",
+    "src/iosignal/ascon.py",
     "src/iosignal/board.py",
     "src/iosignal/boho.py",
     "src/iosignal/client.py",
@@ -26,6 +27,7 @@
     "src/iosignal/sync.py",
     "src/iosignal/x25519.py",
     "tests/_path.py",
+    "tests/fixtures/boho-vectors.json",
     "tests/fixtures/device-rules.json",
     "tests/fixtures/js-vectors.json",
     "tests/fixtures/x25519-vectors.json",
@@ -50,9 +52,10 @@
   ],
   "map": {
     ".gitignore": "public/.gitignore",
+    "CHANGELOG.md": "public/CHANGELOG.md",
     "LICENSE": "public/LICENSE",
-    "README.md": "public/README.md",
     "README.ko.md": "public/README.ko.md",
+    "README.md": "public/README.md",
     "package.json": "public/package.json",
     "pyproject.toml": "public/pyproject.toml"
   },
