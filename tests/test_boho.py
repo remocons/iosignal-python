@@ -54,6 +54,12 @@ class AsconTest(unittest.TestCase):
         self.assertEqual("75BA4455E500E37946C81FDDF6A5E168A94F18D1B31C7927D109736A8A33887E3D7E189E569ACD8508F075E06E89C72877AFB39133EFE2A518DF33BD6D2499CA",
                          ascon.cxof128(bytes(range(9)), 64, bytes(range(16, 25))).hex().upper())
 
+    def test_native_self_check(self):
+        # The import-time check that decides ascon.NATIVE: the pure Python permutation passes it, wrong ones do not.
+        self.assertTrue(ascon._native_ok(lambda st, start: ascon._permute_bytes(st, 12 - start)))
+        self.assertFalse(ascon._native_ok(lambda st, start: None))
+        self.assertFalse(ascon._native_ok(lambda st, start: ascon._permute_bytes(st, 11 - start)))  # a round short
+
     def test_round_trips_and_tag_lengths(self):
         for n in range(0, 50):
             c, t = ascon.encrypt(self.KEY, self.NONCE, bytes(range(n)), b"ad", 8)

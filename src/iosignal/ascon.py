@@ -62,16 +62,35 @@ def _permute_bytes(st, rounds):
         st[8 * k:8 * k + 8] = s[k].to_bytes(8, "little")
 
 
+# Known answers for the self-check below: the 12- and 8-round permutation of bytes 0..39 (pure Python result,
+# which the shared vectors check).
+_KAT12 = "797b2ecb0434b0947f236705e8a5225a3ed84b502f5afbc8864315d58ac016dc761b7a8367ad8288"
+_KAT8 = "5e07caf80e7ce0c6703a053dac2a9d562d914f4bdda4df4e954ec9a22d197efd1b8d85aec2754324"
+
+
+def _native_ok(fn):
+    """True when the native permutation gives the known answers (a CPU or MicroPython version whose viper code
+    compiles but computes something else, e.g. big-endian, an emitter bug or changed type rules, is not used)."""
+    from binascii import hexlify
+    for start, want in ((0, _KAT12), (4, _KAT8)):
+        st = bytearray(range(40))
+        fn(st, start)
+        if hexlify(st).decode() != want:
+            return False
+    return True
+
+
 try:
     from .ascon_fast import permute as _native
+
+    if not _native_ok(_native):
+        raise ValueError("ascon_fast gives wrong results here")
 
     def _perm(st, rounds):
         _native(st, 12 - rounds)
 
-    _t = bytearray(40)
-    _native(_t, 0)  # compiles and runs here, or the pure Python one is used
     NATIVE = True
-except Exception:  # noqa: BLE001 - CPython, or a MicroPython port without the native emitter
+except Exception:  # noqa: BLE001 - CPython, a port without the native emitter, or a failed self-check
     _perm = _permute_bytes
     NATIVE = False
 

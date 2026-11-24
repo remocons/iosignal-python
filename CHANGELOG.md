@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 (2026-11-25)
+
+- `iosignal.ascon` checks the native permutation (`ascon_fast`) against known answers when it is imported and uses
+  it only when they match; otherwise the pure Python permutation runs (`iosignal.ascon.NATIVE` is False). A board
+  whose MicroPython compiles the viper code but computes something else (a big-endian CPU, an emitter bug, changed
+  type rules in a later MicroPython) then still logs in, only slower. The check costs two permutations on import.
+
 ## 0.2.1 (2026-11-25)
 
 Speed on MicroPython boards. Same wire format and API as 0.2.0.
