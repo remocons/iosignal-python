@@ -17,7 +17,7 @@ import time
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC = os.path.join(ROOT, "src", "iosignal")
 OUT = os.path.join(ROOT, "web", "pkg")
-MODULES = ["mbp", "protocol", "boho", "cong", "replproto", "replpoll", "board", "mdevice", "x25519"]
+MODULES = ["mbp", "protocol", "ascon", "boho", "cong", "replproto", "replpoll", "board", "mdevice", "x25519"]
 
 
 def main() -> int:

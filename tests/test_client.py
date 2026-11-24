@@ -37,7 +37,7 @@ class FakeTransport:
     def push(self, data):
         """Server -> client, encrypted when the connection is logged in."""
         if self.boho is not None:
-            data = self.boho.encrypt_488(data)
+            data = self.boho.encrypt_session(data)
         self.inbox.put_nowait(data)
 
 
@@ -68,8 +68,8 @@ class FakeServer:
     def handle(self, t, data):
         if not self.answer:
             return
-        if data[0] == IOMsg.ENC_488:
-            data = t.boho.decrypt_488(data)
+        if data[0] == IOMsg.ENC:
+            data = t.boho.decrypt_session(data)
             assert data is not None, "server could not decrypt"
         self.received.append((t, data))
         kind = data[0]

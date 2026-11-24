@@ -3,6 +3,7 @@
 # Same cases as tests/test_js_vectors.py and tests/test_boho.py, from tests/fixtures/js-vectors.json.
 import json
 import sys
+import time
 
 sys.path.insert(0, "src")
 
@@ -74,35 +75,34 @@ def feeder(values):
 
 
 req = h(S["authReq"])
-client = boho.Boho(rand=feeder([req[9:13]]), clock=feeder([clock_of(p) for _, p in S["clientToServer"]]))
+client = boho.Boho(rand=feeder([req[9:17]]), clock=feeder([clock_of(p) for _, p in S["clientToServer"]]))
 client.set_id8(S["id"])
 client.set_key(S["key"])
 check("client auth_req", client.auth_req(h(S["challenge"])).hex(), S["authReq"])
 check("client verify_auth_res", client.verify_auth_res(h(S["authRes"])), True)
 for text, packet in S["serverToClient"]:
-    check("client decrypt %r" % text, client.decrypt_488(h(packet)), text.encode())
+    check("client decrypt %r" % text, client.decrypt_session(h(packet)), text.encode())
 for text, packet in S["clientToServer"]:
-    check("client encrypt %r" % text, client.encrypt_488(text).hex(), packet)
+    check("client encrypt %r" % text, client.encrypt_session(text).hex(), packet)
 
 ch = h(S["challenge"])
 server_clocks = [int.from_bytes(ch[1:5], "little") * 1000 + int.from_bytes(ch[5:7], "little")]
 server_clocks += [clock_of(p) for _, p in S["serverToClient"]]
-server = boho.Boho(rand=feeder([ch[9:13], ch[7:9]]), clock=feeder(server_clocks))
-server.set_key(S["key"])
+server = boho.Boho(rand=feeder([ch[7:13]]), clock=feeder(server_clocks))
+server.copy_key(boho.derive_key(S["key"]))
 check("server challenge", server.server_time_nonce().hex(), S["challenge"])
 check("server auth_res", server.verify_auth_req(req).hex(), S["authRes"])
 for text, packet in S["clientToServer"]:
-    check("server decrypt %r" % text, server.decrypt_488(h(packet)), text.encode())
+    check("server decrypt %r" % text, server.decrypt_session(h(packet)), text.encode())
 for text, packet in S["serverToClient"]:
-    check("server encrypt %r" % text, server.encrypt_488(text).hex(), packet)
+    check("server encrypt %r" % text, server.encrypt_session(text).hex(), packet)
 
 bad = bytearray(h(S["serverToClient"][1][1]))
 bad[-1] ^= 1
-check("tampered refused", client.decrypt_488(bytes(bad)), None)
-fresh = boho.Boho(rand=feeder([ch[9:13], ch[7:9]]), clock=feeder(server_clocks[:1]))
+check("tampered refused", client.decrypt_session(bytes(bad)), None)
+fresh = boho.Boho()
 fresh.set_key(S["key"])
-fresh.server_time_nonce()  # the same challenge the wrong-key request answered
-check("wrong key refused", fresh.verify_auth_req(h(S["wrongAuthReq"])), None)
+check("wrong key refused", fresh.verify_auth_req(h(S["wrongAuthReq"]), ch), None)
 check("wrong key not authorized", fresh.is_authorized, False)
 
 P = V["bohoPacks"]
@@ -112,20 +112,20 @@ for plain, packet in P["packs"]:
     check("decrypt_pack %d" % (len(plain) // 2), pk.decrypt_pack(h(packet)), h(plain))
 for text, packet in P["e2e"]:
     check("decrypt_e2e %r" % text, pk.decrypt_e2e(h(packet), P["e2eKey"]), text.encode())
-legacy = boho.Boho()
-legacy.set_key("compatibility-test-key")
-check("legacy 2.1.3 pack", legacy.decrypt_pack(h(
-    "b618000000eec5b46ab80201006b0e83fa12895eb8eaf71eec9fb0b90539ce674dd94110824f8374b15a225069a0ce500f")),
-    b"Boho 2.1.3 compatibility")
 
-# A live login with this interpreter's own random source and clock.
+# A live login with this interpreter's own random source and clock, and its speed.
 a, b = boho.Boho(), boho.Boho()
 a.set_key("k")
 b.set_id8("dev1")
 b.set_key("k")
-check("live login", b.verify_auth_res(a.verify_auth_req(b.auth_req(a.server_time_nonce()))), True)
-check("live 1 kB", a.decrypt_488(b.encrypt_488(bytes(range(256)) * 4)), bytes(range(256)) * 4)
+t0 = time.ticks_ms() if hasattr(time, "ticks_ms") else int(time.time() * 1000)
+ok = b.verify_auth_res(a.verify_auth_req(b.auth_req(a.server_time_nonce())))
+t1 = time.ticks_ms() if hasattr(time, "ticks_ms") else int(time.time() * 1000)
+check("live login", ok, True)
+check("live 1 kB", a.decrypt_session(b.encrypt_session(bytes(range(256)) * 4)), bytes(range(256)) * 4)
+t2 = time.ticks_ms() if hasattr(time, "ticks_ms") else int(time.time() * 1000)
 check("live e2e", a.decrypt_e2e(b.encrypt_e2e(b"x", "other"), "other"), b"x")
+print("timing: login %d ms, 1 kB encrypt+decrypt %d ms" % (t1 - t0, t2 - t1))
 
 print("%s: %d passed, %d failed" % (sys.implementation.name, passed, len(failures)))
 for line in failures:

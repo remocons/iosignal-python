@@ -6,10 +6,14 @@
 같은 패키지가 CPython 3.10 이상(asyncio 또는 동기)과 MicroPython 보드(ESP32, ESP32-C3, ESP32-S3)에서 돕니다.
 
 - 시그널, 구독, RPC 호출, 서버 ping. [JS 클라이언트](https://github.com/remocons/iosignal)와 바이트 단위로 같음
-- Boho 로그인과 ENC_488 암호화, 종단 간(E2E) 봉한 시그널
+- Boho 로그인과 암호화(표준 Ascon, NIST SP 800-232), 종단 간(E2E) 봉한 시그널
 - WebSocket(`ws://`, `wss://`)과 TCP(`cong://`, 아두이노 보드와 같은 연결)
 - [장치 규칙](https://docs.iosignal.net/docs/devices/types): IOSignal 앱에 나타나는 장치 만들기, 찾기, 명령 보내기
 - MicroPython: 보드를 장치로, 봉한 원격 REPL과 파일 전송(`iosignal-repl`)
+
+> **0.2.0부터 Boho 3(Ascon)를 씁니다.** 로그인은 IOSignal 서버 10.0.0 이상에서만 됩니다(익명 연결은 어느 서버나
+> 됩니다). 9.x 서버용으로 만든 장치 키는 다시 발급·등록해야 하고, 보드에는 0.2.0 패키지를 USB로 다시 설치해야
+> 합니다. [CHANGELOG.md](CHANGELOG.md)를 보세요.
 
 ## 설치
 
@@ -57,7 +61,7 @@ asyncio.run(main())
 - 보내기(`signal`, `subscribe`, `unsubscribe`, `iam`)는 동기이며 연결이 없으면 False입니다.
 - 핸들러는 함수나 코루틴이고 `Signal`(`tag`, `type`, `data`, `text`, `args`, `is_direct`)을 받습니다.
 - 이벤트: `state`, `ready`, `message`, `direct`, `server_signal`, `iam`, `pong`, `over_size`, `error`.
-- 구독은 기억했다가 재접속 때 다시 보냅니다. 로그인한 `ws://` 연결은 ENC_488로 암호화합니다.
+- 구독은 기억했다가 재접속 때 다시 보냅니다. 로그인한 `ws://` 연결은 Boho(Ascon)로 암호화합니다.
 - `await io.call(target, topic, *args)`는 서버 서비스를 부릅니다(실패하면 `RpcError`).
 - `await io.ping_server(timeout=3.0)`은 서버 왕복 시간을 밀리초로 돌려줍니다. 실패하면 `PingError`, `code`는 `NOT_READY`, `BUSY`(한 번에 하나), `TIMEOUT`, `CONNECTION_CLOSED`, `INVALID_ARGUMENT`.
 
@@ -74,7 +78,7 @@ asyncio.run(main())
 
 ## TCP와 E2E 시그널
 
-- 주소가 `cong://host:port`면 TCP로 붙습니다. 로그인하면 ENC_488로 암호화하고, TCP 스위처의 redirect도 따라갑니다: `IOSignal("cong://io.iosignal.net:55488")`.
+- 주소가 `cong://host:port`면 TCP로 붙습니다. 로그인하면 Boho(Ascon)로 암호화하고, TCP 스위처의 redirect도 따라갑니다: `IOSignal("cong://io.iosignal.net:55488")`.
 - `io.signal_e2e(tag, data, key)`는 서버가 모르는 키로 봉해 보냅니다(로그인한 연결에서만). 받은 `Signal.e2e`가 True면 `io.decrypt_e2e(sig.data, key)`로 엽니다(다른 키나 위조면 None).
 
 ## 장치

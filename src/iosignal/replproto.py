@@ -24,7 +24,7 @@ match; ``get`` streams DATA then an ``end`` reply with the hash. The board acks 
 Runs on CPython 3.10+ and MicroPython 1.28+.
 """
 
-from .boho import Boho, sha256
+from .boho import Boho, derive_key, sha256
 
 OPEN, OPENED, IN, OUT, CLOSE, CLOSED = 1, 2, 3, 4, 5, 6
 # Files, handled by the board's link itself (not through the REPL): FS request (JSON), FS_RES reply (JSON),
@@ -63,7 +63,7 @@ class Sealer:
             raise ValueError("REPL key too short")
         self.key = bytes(key)
         self._boho = Boho()
-        self._boho.copy_key(sha256(self.key))
+        self._boho.copy_key(derive_key(self.key))
 
     def seal(self, kind: int, seq: int, data: bytes = b"") -> bytes:
         return self._boho.encrypt_pack(bytes([kind]) + seq.to_bytes(4, "little") + data)

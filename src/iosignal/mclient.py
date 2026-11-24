@@ -1,7 +1,7 @@
 """Small asyncio IOSignal client over CongSocket (``cong://host:port``) for MicroPython boards.
 
 Runs on MicroPython 1.28+ (ESP32) and on CPython 3.10+ (for testing on a computer). Plain TCP, so a
-logged-in session encrypts with Boho ENC_488 (no TLS needed; the board's clock must be within the
+logged-in session encrypts with Boho ENC (Ascon) (no TLS needed; the board's clock must be within the
 server's skew, 60 s by default, so set it with ntptime first).
 
     io = Client("cong://io.iosignal.net:55488", auth=("dev1", "key"))
@@ -186,7 +186,7 @@ class Client:
 
     def _queue(self, packet: bytes, encrypt: bool) -> None:
         if encrypt and self._boho is not None and self._boho.is_authorized:
-            packet = self._boho.encrypt_488(packet)
+            packet = self._boho.encrypt_session(packet)
             if packet is None:
                 return
         frame = cong.pack(packet)
@@ -279,8 +279,8 @@ class Client:
     def _on_packet(self, packet: bytes) -> None:
         if not packet:
             return
-        if packet[0] == IOMsg.ENC_488:
-            packet = self._boho.decrypt_488(packet) if self._boho else None
+        if packet[0] == IOMsg.ENC:
+            packet = self._boho.decrypt_session(packet) if self._boho else None
             if not packet:
                 return
         t = packet[0]

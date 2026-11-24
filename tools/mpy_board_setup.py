@@ -22,7 +22,7 @@ import tempfile
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 MPREMOTE = os.path.join(os.path.dirname(sys.executable), "mpremote")
-MODULES = ["mbp", "protocol", "boho", "cong", "replproto", "replpoll", "board", "mdevice", "x25519"]
+MODULES = ["mbp", "protocol", "ascon", "boho", "cong", "replproto", "replpoll", "board", "mdevice", "x25519"]
 MAIN = "import iosignal.board\niosignal.board.start()\n"
 
 

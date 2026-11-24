@@ -2,7 +2,7 @@
 
 A ``machine.Timer`` callback (run by MicroPython's scheduler on the main thread, between bytecodes, also
 inside busy loops and ``time.sleep``) polls a non-blocking TCP connection (``cong://``), handles IOSignal
-packets (Boho login, ENC_488), flushes the REPL output and keeps the connection alive. The REPL is mirrored
+packets (Boho login, ENC on Ascon), flushes the REPL output and keeps the connection alive. The REPL is mirrored
 with ``os.dupterm``. Ctrl-C from the controller is fed through dupterm as the last action of a callback, so
 MicroPython raises KeyboardInterrupt in the running code (an exception inside a scheduled callback would be
 caught and printed instead).
@@ -499,7 +499,7 @@ class ReplLink:
 
     def _send(self, packet, encrypt=True, ping=False):
         if encrypt and self.boho is not None and self.boho.is_authorized:
-            packet = self.boho.encrypt_488(packet)
+            packet = self.boho.encrypt_session(packet)
         if not self.tx:
             self.tx_moved_at = time.ticks_ms()  # the stall clock starts with the first waiting byte
         if not ping and packet != PONG_PACKET:
@@ -530,8 +530,8 @@ class ReplLink:
     def _packet(self, p):
         if not p:
             return
-        if p[0] == IOMsg.ENC_488:
-            p = self.boho.decrypt_488(p) if self.boho else None
+        if p[0] == IOMsg.ENC:
+            p = self.boho.decrypt_session(p) if self.boho else None
             if not p:
                 return
         t = p[0]

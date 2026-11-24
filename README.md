@@ -6,10 +6,14 @@ Python client for [IOSignal](https://iosignal.net), a real-time signal broker fo
 The same package runs on CPython 3.10+ (asyncio or blocking) and on MicroPython boards (ESP32, ESP32-C3, ESP32-S3).
 
 - Signals, subscriptions, RPC calls and server ping, byte-compatible with the [JS client](https://github.com/remocons/iosignal)
-- Boho login with ENC_488 encryption, end-to-end sealed signals
+- Boho login and encryption (standard Ascon, NIST SP 800-232), end-to-end sealed signals
 - WebSocket (`ws://`, `wss://`) and TCP (`cong://`, the same link Arduino boards use)
 - [Device rules](https://docs.iosignal.net/docs/devices/types): make devices that appear in IOSignal apps, find and command them
 - MicroPython: a board becomes a device, and a sealed remote REPL with file transfer (`iosignal-repl`)
+
+> **0.2.0 uses Boho 3 (Ascon).** It logs in only to IOSignal servers 10.0.0 or newer; anonymous connections
+> work with any server. Device keys made for 9.x servers must be issued and registered again, and boards
+> need the 0.2.0 package (reinstall over USB). See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -57,7 +61,7 @@ asyncio.run(main())
 - Sending (`signal`, `subscribe`, `unsubscribe`, `iam`) is synchronous and returns False without a connection.
 - Handlers are functions or coroutines and receive a `Signal` (`tag`, `type`, `data`, `text`, `args`, `is_direct`).
 - Events: `state`, `ready`, `message`, `direct`, `server_signal`, `iam`, `pong`, `over_size`, `error`.
-- Subscriptions are remembered and sent again after a reconnect. A logged-in `ws://` connection is encrypted with ENC_488.
+- Subscriptions are remembered and sent again after a reconnect. A logged-in `ws://` connection is encrypted with Boho (Ascon).
 - `await io.call(target, topic, *args)` calls a server service (`RpcError` on failure).
 - `await io.ping_server(timeout=3.0)` returns the round trip in milliseconds. It raises `PingError` with `code` `NOT_READY`, `BUSY` (one at a time), `TIMEOUT`, `CONNECTION_CLOSED` or `INVALID_ARGUMENT`.
 
@@ -74,7 +78,7 @@ asyncio.run(main())
 
 ## TCP and E2E signals
 
-- A `cong://host:port` address connects over TCP. Logged in, it is encrypted with ENC_488, and a TCP switcher redirect is followed: `IOSignal("cong://io.iosignal.net:55488")`.
+- A `cong://host:port` address connects over TCP. Logged in, it is encrypted with Boho (Ascon), and a TCP switcher redirect is followed: `IOSignal("cong://io.iosignal.net:55488")`.
 - `io.signal_e2e(tag, data, key)` seals data with a key the server never sees (logged-in connections only). A received `Signal` with `e2e` True opens with `io.decrypt_e2e(sig.data, key)` (None for a wrong key or a forgery).
 
 ## Devices

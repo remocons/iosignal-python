@@ -1,30 +1,28 @@
-# Boho against a session and packs recorded from the JS boho (tests/fixtures/js-vectors.json) and the
-# legacy 2.1.3 fixture of boho. Random nonces and the clock are fed back from the recorded packets,
-# so Python must produce the same bytes as JS.
+# Boho 3 (Ascon) against a session and packs recorded from the JS boho (tests/fixtures/js-vectors.json),
+# the shared vectors of the JS boho package (tests/fixtures/boho-vectors.json, a copy of the boho
+# source's test/fixtures/boho-vectors.json) and official Ascon known answers. Random nonces and the clock
+# are fed back from the recorded packets, so Python must produce the same bytes as JS.
 import json
 import os
 import unittest
 
 from _path import iosignal  # noqa: F401
-from iosignal import boho
+from iosignal import ascon, boho
 from iosignal.boho import Boho
 
 HERE = os.path.dirname(__file__)
 with open(os.path.join(HERE, "fixtures", "js-vectors.json"), encoding="utf-8") as f:
     VECTORS = json.load(f)
+with open(os.path.join(HERE, "fixtures", "boho-vectors.json"), encoding="utf-8") as f:
+    SHARED = json.load(f)
 SESSION = VECTORS["bohoSession"]
 PACKS = VECTORS["bohoPacks"]
-LEGACY = {
-    "key": "compatibility-test-key",
-    "plaintext": "Boho 2.1.3 compatibility",
-    "packet": "b618000000eec5b46ab80201006b0e83fa12895eb8eaf71eec9fb0b90539ce674dd94110824f8374b15a225069a0ce500f",
-}  # boho test/fixtures/legacy-pack.json
 
 h = bytes.fromhex
 
 
 def clock_of(packet_hex: str) -> int:
-    """Epoch ms written in an ENC_488 packet."""
+    """Epoch ms written in an ENC or ENC_PACK packet."""
     p = h(packet_hex)
     return int.from_bytes(p[5:9], "little") * 1000 + int.from_bytes(p[9:11], "little")
 
@@ -34,11 +32,41 @@ def feeder(values):
     return lambda *_: next(it)
 
 
+class AsconTest(unittest.TestCase):
+    KEY, NONCE = bytes(range(16)), bytes(range(16, 32))
+
+    def test_known_answers(self):
+        # ascon-c LWC_AEAD_KAT_128_128.txt Count = 1, 34, 100, 1089 and LWC_CXOF_KAT_128_512.txt Count = 1, 307
+        for pt, ad, ct in [
+            ("", "", "4F9C278211BEC9316BF68F46EE8B2EC6"),
+            ("20", "", "E8DD576ABA1CD3E6FC704DE02AEDB79588"),
+            ("202122", "", "E8C3DEAF8E12816B8EDF39AD1571A9492B7CA2"),
+            ("202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F",
+             "303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F",
+             "CB34D04660A66DBFBE9C856601F5B8AA51A499B55AC8F7FBEFBC331A613EE9CDFD191750A47F211C0A15ED28173D7CAA"),
+        ]:
+            c, t = ascon.encrypt(self.KEY, self.NONCE, h(pt), h(ad))
+            self.assertEqual(ct, (c + t).hex().upper())
+            self.assertEqual(h(pt), ascon.decrypt(self.KEY, self.NONCE, c, h(ad), t))
+            self.assertIsNone(ascon.decrypt(self.KEY, self.NONCE, c, h(ad), bytes([t[0] ^ 1]) + t[1:]))
+        self.assertEqual("4F50159EF70BB3DAD8807E034EAEBD44C4FA2CBBC8CF1F05511AB66CDCC529905CA12083FC186AD899B270B1473DC5F7EC88D1052082DCDFE69FB75D269E7B74",
+                         ascon.cxof128(b"", 64, b"").hex().upper())
+        self.assertEqual("75BA4455E500E37946C81FDDF6A5E168A94F18D1B31C7927D109736A8A33887E3D7E189E569ACD8508F075E06E89C72877AFB39133EFE2A518DF33BD6D2499CA",
+                         ascon.cxof128(bytes(range(9)), 64, bytes(range(16, 25))).hex().upper())
+
+    def test_round_trips_and_tag_lengths(self):
+        for n in range(0, 50):
+            c, t = ascon.encrypt(self.KEY, self.NONCE, bytes(range(n)), b"ad", 8)
+            self.assertEqual(8, len(t))
+            self.assertEqual(bytes(range(n)), ascon.decrypt(self.KEY, self.NONCE, c, b"ad", t))
+        self.assertIsNone(ascon.decrypt(self.KEY, self.NONCE, b"", b"", b"abc"))
+
+
 class SessionReplayTest(unittest.TestCase):
-    def client(self, extra_clocks=()):
+    def client(self):
         req = h(SESSION["authReq"])
-        clocks = [clock_of(p) for _, p in SESSION["clientToServer"]] + list(extra_clocks)
-        c = Boho(rand=feeder([req[9:13]]), clock=feeder(clocks))
+        clocks = [clock_of(p) for _, p in SESSION["clientToServer"]]
+        c = Boho(rand=feeder([req[9:17]]), clock=feeder(clocks))
         c.set_id8(SESSION["id"])
         c.set_key(SESSION["key"])
         return c
@@ -47,8 +75,8 @@ class SessionReplayTest(unittest.TestCase):
         challenge = h(SESSION["challenge"])
         clocks = [int.from_bytes(challenge[1:5], "little") * 1000 + int.from_bytes(challenge[5:7], "little")]
         clocks += [clock_of(p) for _, p in SESSION["serverToClient"]]
-        s = Boho(rand=feeder([challenge[9:13], challenge[7:9]]), clock=feeder(clocks))
-        s.set_key(SESSION["key"])
+        s = Boho(rand=feeder([challenge[7:13]]), clock=feeder(clocks))
+        s.copy_key(boho.derive_key(SESSION["key"]))
         return s
 
     def test_client_matches_js(self):
@@ -58,145 +86,127 @@ class SessionReplayTest(unittest.TestCase):
         self.assertTrue(c.verify_auth_res(h(SESSION["authRes"])))
         self.assertTrue(c.is_authorized)
         for text, packet in SESSION["serverToClient"]:
-            self.assertEqual(text.encode(), c.decrypt_488(h(packet)))
+            self.assertEqual(text.encode(), c.decrypt_session(h(packet)))
         for text, packet in SESSION["clientToServer"]:
-            self.assertEqual(packet, c.encrypt_488(text).hex(), text)
+            self.assertEqual(packet, c.encrypt_session(text).hex(), text)
 
     def test_server_matches_js(self):
         s = self.server()
         self.assertEqual(SESSION["challenge"], s.server_time_nonce().hex())
-        self.assertEqual(b"device-0", s.id8_of(h(SESSION["authReq"])))
         self.assertEqual(SESSION["authRes"], s.verify_auth_req(h(SESSION["authReq"])).hex())
         for text, packet in SESSION["clientToServer"]:
-            self.assertEqual(text.encode(), s.decrypt_488(h(packet)))
+            self.assertEqual(text.encode(), s.decrypt_session(h(packet)))
         for text, packet in SESSION["serverToClient"]:
-            self.assertEqual(packet, s.encrypt_488(text).hex(), text)
+            self.assertEqual(packet, s.encrypt_session(text).hex(), text)
 
-    def test_wrong_key_is_refused(self):
+    def test_refusals(self):
         s = self.server()
         s.server_time_nonce()
         self.assertIsNone(s.verify_auth_req(h(SESSION["wrongAuthReq"])))
         self.assertFalse(s.is_authorized)
-        c = Boho(rand=feeder([bytes(4)]))
-        c.set_id8("x")
-        c.set_key("wrong")
-        c.auth_req(h(SESSION["challenge"]))
-        self.assertFalse(c.verify_auth_res(h(SESSION["authRes"])))
-        self.assertFalse(c.is_authorized)
-
-    def test_tampered_packets_are_refused(self):
         c = self.client()
+        self.assertIsNone(c.encrypt_session("x"))  # before login
         c.auth_req(h(SESSION["challenge"]))
-        c.verify_auth_res(h(SESSION["authRes"]))
-        packet = bytearray(h(SESSION["serverToClient"][1][1]))
+        self.assertFalse(c.verify_auth_res(bytes([boho.AUTH_RES]) + bytes(16)))
+        self.assertTrue(c.verify_auth_res(h(SESSION["authRes"])))
+        packet = h(SESSION["serverToClient"][1][1])
         for i in range(len(packet)):
             bad = bytearray(packet)
-            bad[i] ^= 0x01
-            self.assertIsNone(c.decrypt_488(bytes(bad)), i)
+            bad[i] ^= 1
+            self.assertIsNone(c.decrypt_session(bytes(bad)), i)
         for n in range(len(packet)):
-            self.assertIsNone(c.decrypt_488(bytes(packet[:n])))
-        self.assertIsNone(c.decrypt_488(bytes(packet) + b"\x00"))
+            self.assertIsNone(c.decrypt_session(packet[:n]))
+        self.assertIsNone(c.decrypt_session(packet + b"\x00"))
+        self.assertIsNone(c.decrypt_session(h(SESSION["clientToServer"][1][1])), "own direction refused")
+        self.assertIsNone(c.encrypt_session("x", 0xB8), "a Boho 2.x type")
 
-    def test_nothing_before_login(self):
-        c = self.client()
-        self.assertIsNone(c.encrypt_488("x"))
-        self.assertIsNone(c.decrypt_488(h(SESSION["serverToClient"][1][1])))
-        self.assertIsNone(Boho().auth_req(h(SESSION["challenge"])))  # no key
-
-    def test_malformed_challenge(self):
-        c = self.client()
-        challenge = bytearray(h(SESSION["challenge"]))
-        challenge[5:7] = (1000).to_bytes(2, "little")
-        self.assertIsNone(c.auth_req(bytes(challenge)))
-        self.assertIsNone(c.auth_req(h(SESSION["challenge"])[:12]))
-
-    def test_enc_e2e_header(self):
-        c = self.client()
-        c.auth_req(h(SESSION["challenge"]))
-        c.verify_auth_res(h(SESSION["authRes"]))
-        enc = bytearray(h(SESSION["serverToClient"][1][1]))
-        enc[0] = boho.ENC_E2E
-        self.assertEqual(b"hello", c.decrypt_488(bytes(enc) + b"opaque e2e bytes"))
-
-
-class LiveRoundTripTest(unittest.TestCase):
-    def test_python_login_and_both_directions(self):
+    def test_e2e_header_and_live_session(self):
         server, client = Boho(), Boho()
         server.set_key("k")
-        client.set_id8("dev1")
-        client.set_key("k")
+        client.set_id_key("dev.k")
         self.assertTrue(client.verify_auth_res(server.verify_auth_req(client.auth_req(server.server_time_nonce()))))
-        for size in (0, 1, 31, 32, 33, 1024):
-            data = bytes(range(256)) * 4
-            data = data[:size]
-            self.assertEqual(data, server.decrypt_488(client.encrypt_488(data)))
-            self.assertEqual(data, client.decrypt_488(server.encrypt_488(data)))
-
-    def test_counter_wrap_keeps_clock_monotonic(self):
-        b = Boho(clock=lambda: 5_000)
-        b.copy_key(bytes(32))
-        b.is_authorized = True
-        b.counter = 0xFFFE
-        first = b.encrypt_488("a")
-        second = b.encrypt_488("b")  # counter wraps to 0 at the same ms
-        self.assertEqual(0xFFFF, int.from_bytes(first[11:13], "little"))
-        self.assertEqual(0, int.from_bytes(second[11:13], "little"))
-        self.assertEqual(5_001, int.from_bytes(second[5:9], "little") * 1000 + int.from_bytes(second[9:11], "little"))
-
-    def test_keys(self):
-        b = Boho()
-        with self.assertRaises(ValueError):
-            b.set_key("")
-        with self.assertRaises(ValueError):
-            b.copy_key(b"\x01")
-        with self.assertRaises(RuntimeError):
-            b.encrypt_pack("x")
-        self.assertFalse(b.set_id_key("nodot"))
-        self.assertTrue(b.set_id_key("dev.k.ey"))
-        self.assertEqual(b"dev\x00\x00\x00\x00\x00", b._id8)
-        self.assertEqual(boho.sha256(b"k.ey"), b._key32)
+        enc = client.encrypt_session(b"hello", boho.ENC_E2E)
+        self.assertEqual(b"hello", server.decrypt_session(enc + b"opaque e2e bytes"))
+        for data in [b"", b"a" * 15, b"b" * 16, bytes(range(256)) * 4]:
+            self.assertEqual(data, server.decrypt_session(client.encrypt_session(data)))
+            self.assertEqual(data, client.decrypt_session(server.encrypt_session(data)))
 
 
-class PackTest(unittest.TestCase):
-    def test_js_packs(self):
-        b = Boho()
+class PackReplayTest(unittest.TestCase):
+    def test_packs_match_js(self):
+        packs = PACKS["packs"] + PACKS["e2e"]
+        sender = h(packs[0][1])[13:21]
+        b = Boho(rand=feeder([sender]), clock=feeder([clock_of(p) for _, p in packs]))
         b.set_key(PACKS["key"])
         for plain, packet in PACKS["packs"]:
+            self.assertEqual(packet, b.encrypt_pack(h(plain)).hex())
             self.assertEqual(h(plain), b.decrypt_pack(h(packet)))
-            self.assertEqual(len(h(plain)) + boho.ENC_PACK_META, len(h(packet)))
-
-    def test_js_e2e(self):
-        b = Boho()
-        b.set_key(PACKS["key"])
         for text, packet in PACKS["e2e"]:
+            self.assertEqual(packet, b.encrypt_e2e(text, PACKS["e2eKey"]).hex())
             self.assertEqual(text.encode(), b.decrypt_e2e(h(packet), PACKS["e2eKey"]))
-            self.assertIsNone(b.decrypt_pack(h(packet)))  # not the session key
+            self.assertIsNone(b.decrypt_e2e(h(packet), "other"))
 
-    def test_legacy_213_packet(self):
-        b = Boho()
-        b.set_key(LEGACY["key"])
-        self.assertEqual(LEGACY["plaintext"].encode(), b.decrypt_pack(h(LEGACY["packet"])))
 
-    def test_pack_round_trip_and_rejects(self):
-        b = Boho()
-        b.set_key("key")
-        packet = b.encrypt_pack("test message")
-        self.assertEqual(b"test message", b.decrypt_pack(packet))
-        for n in range(len(packet)):
-            self.assertIsNone(b.decrypt_pack(packet[:n]))
-        self.assertIsNone(b.decrypt_pack(packet + b"\x00"))
-        wrong_type = bytes([boho.ENC_488]) + packet[1:]
-        self.assertIsNone(b.decrypt_pack(wrong_type))
+class SharedVectorsTest(unittest.TestCase):
+    """The same answers as JS, C++ (Arduino) and Kotlin for the boho source's test/fixtures/boho-vectors.json."""
 
-    def test_e2e_leaves_session_state(self):
-        server, client = Boho(), Boho()
-        server.set_key("k")
-        client.set_id8("d")
-        client.set_key("k")
-        client.verify_auth_res(server.verify_auth_req(client.auth_req(server.server_time_nonce())))
-        sealed = client.encrypt_e2e("x", "other")
-        self.assertEqual(b"x", server.decrypt_e2e(sealed, "other"))
-        self.assertEqual(b"after", server.decrypt_488(client.encrypt_488("after")))
+    def test_copy_is_current(self):
+        source = os.path.join(HERE, "..", "..", "_boho", "test", "fixtures", "boho-vectors.json")
+        if not os.path.exists(source):
+            self.skipTest("the boho source is not next to this repository")
+        with open(source, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), SHARED, "copy the boho source's test/fixtures/boho-vectors.json again")
+
+    def login(self, l):
+        c = Boho()
+        c.set_id8(l["id"])
+        c.set_key(l["key"])
+        req = c.auth_req(h(l["challenge"]), h(l["clientNonce"]))
+        s = Boho()
+        s.copy_key(boho.derive_key(l["key"]))
+        res = s.verify_auth_req(req, h(l["challenge"]))
+        return c, s, req, res
+
+    def test_keys_logins_messages_packs(self):
+        for k in SHARED["keys"]:
+            self.assertEqual(k["derived"], boho.derive_key(k["key"]).hex())
+        for l in SHARED["logins"]:
+            c, s, req, res = self.login(l)
+            self.assertEqual(l["authReq"], req.hex())
+            self.assertEqual(l["authRes"], res.hex())
+            self.assertTrue(c.verify_auth_res(res))
+        c, s, _, _ = self.login(SHARED["logins"][0])
+        c.verify_auth_res(h(SHARED["logins"][0]["authRes"]))
+        for m in SHARED["messages"]:
+            side = c if m["dir"] == 2 else s
+            self.assertEqual(m["plaintext"], side.decrypt_session(h(m["packet"])).hex())
+        for p in SHARED["packs"]:
+            self.assertEqual(p["plaintext"], Boho().decrypt_e2e(h(p["packet"]), p["key"]).hex())
+
+    def test_invalid(self):
+        sessions = {}
+        for l in SHARED["logins"]:
+            c, s, _, res = self.login(l)
+            c.verify_auth_res(res)
+            sessions[l["sessionKey"]] = (c, s)
+        for case in SHARED["invalid"]:
+            kind, packet = case["kind"], h(case["packet"])
+            if kind == "message":
+                c, s = sessions[case["sessionKey"]]
+                self.assertIsNone((c if case["dir"] == 2 else s).decrypt_session(packet), case["reason"])
+            elif kind == "pack":
+                self.assertIsNone(Boho().decrypt_e2e(packet, case["key"]), case["reason"])
+            elif kind == "authReq":
+                s = Boho()
+                s.copy_key(boho.derive_key(case["key"]))
+                self.assertIsNone(s.verify_auth_req(packet, h(case["challenge"])), case["reason"])
+            elif kind == "authRes":
+                l = SHARED["logins"][case["sessionOf"]]
+                c = Boho()
+                c.set_id8(l["id"])
+                c.set_key(l["key"])
+                c.auth_req(h(l["challenge"]), h(l["clientNonce"]))
+                self.assertFalse(c.verify_auth_res(packet), case["reason"])
 
 
 if __name__ == "__main__":

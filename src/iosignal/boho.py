@@ -1,22 +1,27 @@
-"""Boho 2.x session protocol (npm ``boho``, src/boho.js): login proof, ENC_488 session packets and ENC_PACK.
+"""Boho 3 (npm ``boho`` 3, src/boho.js): shared-key login and encrypted packets on Ascon (NIST SP 800-232).
 
-Byte layouts and hash inputs match the JavaScript implementation. Both sides are here: the client
-(``auth_req``, ``verify_auth_res``) and the server (``server_time_nonce``, ``verify_auth_req``), so the
-protocol can be tested without a server.
+Byte layouts match the JavaScript implementation (and its shared vectors, test/fixtures/boho-vectors.json).
+Both sides are here: the client (``auth_req``, ``verify_auth_res``) and the server
+(``server_time_nonce``, ``verify_auth_req``), so the protocol can be tested without a server.
 
 Packets:
-  SERVER_TIME_NONCE  B0 | u32LE seconds | u16LE ms | u16LE counter | nonce4            13 bytes
-  AUTH_REQ           B1 | id8 | nonce4 | sha256(key32 | salt12 | nonce4)             45 bytes
-  AUTH_RES           B2 | sha256(key32 | salt12' | clientNonce)                       33 bytes
-  ENC_488            B8 | u32LE len | clock8 | tag8 | xdata                           21 + len
-  ENC_PACK           B6 | u32LE len | salt12 | tag8 | xdata                           25 + len
+  SERVER_TIME_NONCE  B0 | u32LE seconds | u16LE ms | random6                         13 bytes
+  AUTH_REQ           B4 | id8 | clientNonce8 | clientProof16                         33 bytes
+  AUTH_RES           B5 | serverProof16                                              17 bytes
+  ENC / ENC_E2E      BB / BA | u32LE len | sec4 ms2 counter2 | tag8 | ciphertext      21 + len
+  ENC_PACK           B9 | u32LE len | nonce16 (sec4 ms2 counter2 sender8) | tag8 | ct 29 + len
 
-``key32`` is sha256(key). Tags are the legacy prefix hash sha256(key32 | salt12 | data), not HMAC.
+Keys: ``derive_key(key) = Ascon-CXOF128("boho/v2/key", key)``, 16 bytes. A login makes
+``CXOF128("boho/v2/session", key | challenge | id8 | clientNonce)`` = session key | client proof | server proof.
+Session packets: Ascon-AEAD128, nonce = header clock + direction byte (client 1, server 2),
+associated data = the 13-byte header. The Boho 2.x code (SHA-256 based) is in classic/.
 """
 
 import hashlib
 import os
 import time
+
+from . import ascon
 
 try:
     import _thread
@@ -24,24 +29,29 @@ except ImportError:  # a MicroPython build without threads
     _thread = None
 
 __all__ = [
-    "Boho", "SERVER_TIME_NONCE", "AUTH_REQ", "AUTH_RES", "AUTH_FAIL", "ENC_PACK", "ENC_E2E", "ENC_488",
-    "SERVER_TIME_NONCE_SIZE", "AUTH_REQ_SIZE", "AUTH_RES_SIZE", "ENC_PACK_META", "ENC_488_META", "sha256",
+    "Boho", "SERVER_TIME_NONCE", "AUTH_REQ", "AUTH_RES", "AUTH_FAIL", "ENC_PACK", "ENC_E2E", "ENC",
+    "SERVER_TIME_NONCE_SIZE", "AUTH_REQ_SIZE", "AUTH_RES_SIZE", "ENC_PACK_META", "ENC_META",
+    "derive_key", "sha256",
 ]
 
 SERVER_TIME_NONCE = 0xB0
-AUTH_REQ = 0xB1
-AUTH_RES = 0xB2
 AUTH_FAIL = 0xB3
-ENC_PACK = 0xB6
-ENC_E2E = 0xB7
-ENC_488 = 0xB8
+AUTH_REQ = 0xB4
+AUTH_RES = 0xB5
+ENC_PACK = 0xB9
+ENC_E2E = 0xBA
+ENC = 0xBB
 
 SERVER_TIME_NONCE_SIZE = 13
-AUTH_REQ_SIZE = 45
-AUTH_RES_SIZE = 33
-ENC_PACK_META = 25
-ENC_488_META = 21
+AUTH_REQ_SIZE = 33
+AUTH_RES_SIZE = 17
+ENC_META = 21
+ENC_PACK_META = 29
 
+_KEY_CUSTOM = b"boho/v2/key"
+_SESSION_CUSTOM = b"boho/v2/session"
+_TAG = 8
+_DIR = {"client": 1, "server": 2}  # the direction byte of what that side sends
 
 
 def _equal(a: bytes, b: bytes) -> bool:
@@ -83,6 +93,7 @@ class _RLock:
 
 
 def sha256(*parts: bytes) -> bytes:
+    """SHA-256 helper (not used by the Boho protocol; the REPL link derives its keys with it)."""
     h = hashlib.sha256()
     for p in parts:
         h.update(p)
@@ -91,6 +102,14 @@ def sha256(*parts: bytes) -> bytes:
 
 def _bytes(data) -> bytes:
     return data.encode() if isinstance(data, str) else bytes(data)
+
+
+def derive_key(key) -> bytes:
+    """Key string (or bytes) → the 16-byte key, what a server stores for an ID."""
+    data = _bytes(key)
+    if not data:
+        raise ValueError("Key must not be empty")
+    return ascon.cxof128(data, 16, _KEY_CUSTOM)
 
 
 # Some MicroPython ports count from 2000-01-01; Boho clocks are Unix epoch milliseconds.
@@ -105,6 +124,14 @@ def _now_ms() -> int:
     return int(time.time() * 1000) + _EPOCH_OFFSET_MS
 
 
+def _session_nonce(header: bytes, direction: int) -> bytes:
+    return bytes(header[5:13]) + bytes([direction]) + bytes(7)
+
+
+def _valid_challenge(c) -> bool:
+    return len(c) == SERVER_TIME_NONCE_SIZE and c[0] == SERVER_TIME_NONCE and int.from_bytes(c[5:7], "little") < 1000
+
+
 class Boho:
     """One Boho session. Senders and the socket reader may share it, so state changes hold a lock.
 
@@ -115,6 +142,7 @@ class Boho:
         self._rand = rand
         self._clock = clock
         self._lock = _RLock()
+        self._sender = None
         self.clear_auth()
 
     # ---- key and ID
@@ -122,14 +150,13 @@ class Boho:
     def clear_auth(self) -> None:
         with self._lock:
             self._id8 = bytes(8)
-            self._key32 = bytes(32)
-            self._has_key = False
-            self._salt12 = bytes(12)
-            self._auth_salt12 = bytes(12)
-            self.local_nonce = bytes(4)
-            self.remote_nonce = bytes(4)
-            self.counter = 0
-            self._last_send_time = 0
+            self._key = None
+            self._session_key = None
+            self._server_proof = None
+            self._challenge = None
+            self._role = None
+            self._last_ms = -1
+            self._last_counter = 0
             self.is_authorized = False
 
     def set_id8(self, id_) -> None:
@@ -138,17 +165,17 @@ class Boho:
         self._id8 = raw + bytes(8 - len(raw))
 
     def set_key(self, key) -> None:
-        data = _bytes(key)
-        if not data:
-            raise ValueError("Key must not be empty")
-        self.copy_key(sha256(data))
+        """A key string; a new key ends the session."""
+        self.copy_key(derive_key(key))
 
-    def copy_key(self, key32: bytes) -> None:
-        if len(key32) != 32:
-            raise ValueError("copy_key requires exactly 32 bytes")
+    def copy_key(self, key16: bytes) -> None:
+        """A stored 16-byte key (``derive_key``)."""
+        if len(key16) != 16:
+            raise ValueError("copy_key requires exactly 16 bytes")
         with self._lock:
-            self._key32 = bytes(key32)
-            self._has_key = True
+            self._key = bytes(key16)
+            self._session_key = None
+            self.is_authorized = False
 
     def set_id_key(self, id_key: str) -> bool:
         """Splits ``id.key`` at the first dot. False (nothing set) without a dot."""
@@ -161,100 +188,65 @@ class Boho:
 
     @property
     def has_key(self) -> bool:
-        return self._has_key
+        return self._key is not None
 
-    # ---- primitives
-
-    def _require_key(self) -> None:
-        if not self._has_key:
-            raise RuntimeError("Set a key before encryption or authentication")
-
-    def _tag(self, data: bytes) -> bytes:
-        return sha256(self._key32, self._salt12, data)
-
-    def _xotp(self, data: bytes) -> bytes:
-        """XOR with sha256(otp32 | u32LE index) blocks, index from 1, otp32 = sha256(key32 | salt12)."""
-        otp32 = sha256(self._key32, self._salt12)
-        out = bytearray(data)
-        for block, offset in enumerate(range(0, len(out), 32), 1):
-            pad = sha256(otp32, block.to_bytes(4, "little"))
-            for i in range(min(32, len(out) - offset)):
-                out[offset + i] ^= pad[i]
-        return bytes(out)
-
-    def _set_clock_nonce(self, nonce: bytes) -> None:
-        """A monotonic clock and counter, with the peer's nonce, as the salt."""
-        now = max(self._clock(), self._last_send_time)
-        self.counter = (self.counter + 1) & 0xFFFF
-        if self.counter == 0 and now == self._last_send_time:
-            now += 1
-        if now < 0 or now // 1000 > 0xFFFFFFFF:
-            raise ValueError("Clock is outside the protocol range")
-        self._last_send_time = now
-        self._salt12 = ((now // 1000).to_bytes(4, "little") + (now % 1000).to_bytes(2, "little")
-                        + self.counter.to_bytes(2, "little") + nonce)
-
-    @staticmethod
-    def _sized(packet: bytes, type_: int, meta: int, variable: bool) -> bool:
-        if len(packet) < meta or packet[0] != type_:
-            return False
-        if variable:
-            return int.from_bytes(packet[1:5], "little") == len(packet) - meta
-        return len(packet) == meta
+    def _session(self, challenge: bytes, id8: bytes, client_nonce: bytes) -> bytes:
+        return ascon.cxof128(self._key + bytes(challenge) + bytes(id8) + bytes(client_nonce), 48, _SESSION_CUSTOM)
 
     # ---- login: client
 
-    def auth_req(self, challenge: bytes) -> bytes | None:
+    def auth_req(self, challenge: bytes, client_nonce: bytes | None = None) -> bytes | None:
         """AUTH_REQ answering a SERVER_TIME_NONCE challenge; None without a key or for a malformed challenge."""
         with self._lock:
-            if not self._has_key or not self._sized(challenge, SERVER_TIME_NONCE, SERVER_TIME_NONCE_SIZE, False):
+            if self._key is None or not _valid_challenge(challenge):
                 return None
-            if int.from_bytes(challenge[5:7], "little") >= 1000:
-                return None
+            nonce = bytes(client_nonce) if client_nonce is not None else self._rand(8)
+            out = self._session(challenge, self._id8, nonce)
+            self._session_key = out[:16]
+            self._server_proof = out[32:48]
+            self._role = "client"
             self.is_authorized = False
-            self._salt12 = bytes(challenge[1:13])
-            self.local_nonce = self._rand(4)
-            self.remote_nonce = bytes(challenge[9:13])
-            return bytes([AUTH_REQ]) + self._id8 + self.local_nonce + self._tag(self.local_nonce)
+            return bytes([AUTH_REQ]) + self._id8 + nonce + out[16:32]
 
     def verify_auth_res(self, packet: bytes) -> bool:
         """True when AUTH_RES proves the server knows the key; the session is then authorized."""
         with self._lock:
-            if not self._has_key or not self._sized(packet, AUTH_RES, AUTH_RES_SIZE, False):
+            if (self._server_proof is None or len(packet) != AUTH_RES_SIZE or packet[0] != AUTH_RES
+                    or not _equal(bytes(packet[1:]), self._server_proof)):
                 return False
-            self._salt12 = self.remote_nonce + self.local_nonce + self.remote_nonce
-            ok = _equal(self._tag(self.local_nonce), bytes(packet[1:33]))
-            if ok:
-                self.is_authorized = True
-            return ok
+            self._server_proof = None
+            self.is_authorized = True
+            return True
 
     # ---- login: server
 
     def server_time_nonce(self) -> bytes:
+        """The 13-byte challenge, kept for ``verify_auth_req``."""
         with self._lock:
             now = self._clock()
-            self.local_nonce = self._rand(4)
-            self._auth_salt12 = ((now // 1000).to_bytes(4, "little") + (now % 1000).to_bytes(2, "little")
-                                 + self._rand(2) + self.local_nonce)
-            return bytes([SERVER_TIME_NONCE]) + self._auth_salt12
+            self._challenge = (bytes([SERVER_TIME_NONCE]) + (now // 1000).to_bytes(4, "little")
+                               + (now % 1000).to_bytes(2, "little") + self._rand(6))
+            return self._challenge
 
     def id8_of(self, packet: bytes) -> bytes | None:
         """The ID field of an AUTH_REQ, so a server can look up the key before verifying."""
-        return bytes(packet[1:9]) if self._sized(packet, AUTH_REQ, AUTH_REQ_SIZE, False) else None
+        return bytes(packet[1:9]) if len(packet) == AUTH_REQ_SIZE and packet[0] == AUTH_REQ else None
 
-    def verify_auth_req(self, packet: bytes) -> bytes | None:
+    def verify_auth_req(self, packet: bytes, challenge: bytes | None = None) -> bytes | None:
         """AUTH_RES for a valid AUTH_REQ (the session is then authorized), else None."""
         with self._lock:
-            if not self._has_key or not self._sized(packet, AUTH_REQ, AUTH_REQ_SIZE, False):
+            challenge = challenge if challenge is not None else self._challenge
+            if (self._key is None or challenge is None or not _valid_challenge(challenge)
+                    or len(packet) != AUTH_REQ_SIZE or packet[0] != AUTH_REQ):
                 return None
-            nonce = bytes(packet[9:13])
-            self._salt12 = self._auth_salt12
-            if not _equal(self._tag(nonce), bytes(packet[13:45])):
+            out = self._session(challenge, packet[1:9], packet[9:17])
+            if not _equal(bytes(packet[17:33]), out[16:32]):
                 return None
-            self.remote_nonce = nonce
-            self._salt12 = self.local_nonce + self.remote_nonce + self.local_nonce
+            self._id8 = bytes(packet[1:9])
+            self._session_key = out[:16]
+            self._role = "server"
             self.is_authorized = True
-            return bytes([AUTH_RES]) + self._tag(nonce)
+            return bytes([AUTH_RES]) + out[32:48]
 
     # ---- session packets
 
@@ -262,79 +254,93 @@ class Boho:
         """A dropped connection needs a new login; the ID and key stay for it."""
         self.is_authorized = False
 
-    def encrypt_488(self, data) -> bytes | None:
-        """ENC_488 packet; None before authentication."""
+    def _next_clock(self):
+        """The next outgoing (seconds, ms, counter): strictly increasing, from the clock."""
+        ms = self._clock()
+        if ms > self._last_ms:
+            counter = (self._last_counter + 1) & 0xFFFF
+        else:
+            ms = self._last_ms
+            counter = self._last_counter + 1
+            if counter > 0xFFFF:
+                ms += 1
+                counter = 0
+        if ms < 0 or ms // 1000 > 0xFFFFFFFF:
+            raise ValueError("Clock is outside the protocol range")
+        self._last_ms, self._last_counter = ms, counter
+        return ms // 1000, ms % 1000, counter
+
+    def _header(self, type_: int, length: int) -> bytes:
+        sec, ms, counter = self._next_clock()
+        return (bytes([type_]) + length.to_bytes(4, "little") + sec.to_bytes(4, "little")
+                + ms.to_bytes(2, "little") + counter.to_bytes(2, "little"))
+
+    def encrypt_session(self, data, type_: int = ENC) -> bytes | None:
+        """ENC packet, or ENC_E2E for a routing header; None before authentication."""
         with self._lock:
-            if not self.is_authorized or not self._has_key:
+            if not self.is_authorized or self._session_key is None or type_ not in (ENC, ENC_E2E):
                 return None
             plain = _bytes(data)
-            self._set_clock_nonce(self.remote_nonce)
-            tag = self._tag(plain)
-            return (bytes([ENC_488]) + len(plain).to_bytes(4, "little") + self._salt12[:8] + tag[:8]
-                    + self._xotp(plain))
+            header = self._header(type_, len(plain))
+            cipher, tag = ascon.encrypt(self._session_key, _session_nonce(header, _DIR[self._role]), plain, header, _TAG)
+            return header + tag + cipher
 
-    def decrypt_488(self, packet: bytes) -> bytes | None:
-        """Plaintext of an ENC_488 packet, or of the encrypted header of an ENC_E2E packet.
+    def decrypt_session(self, packet: bytes) -> bytes | None:
+        """Plaintext of an ENC packet, or of the encrypted routing header of an ENC_E2E packet.
 
         None for a malformed, unauthenticated or forged packet.
         """
         with self._lock:
-            if not self.is_authorized or not self._has_key:
+            if not self.is_authorized or self._session_key is None:
                 return None
             p = bytes(packet)
-            if p[:1] == bytes([ENC_E2E]):
-                if len(p) < ENC_488_META:
-                    return None
-                header_len = int.from_bytes(p[1:5], "little")
-                if header_len > len(p) - ENC_488_META:
-                    return None
-                p = bytes([ENC_488]) + p[1:ENC_488_META + header_len]
-            if not self._sized(p, ENC_488, ENC_488_META, True):
+            if len(p) < ENC_META or p[0] not in (ENC, ENC_E2E):
+                return None
+            length = int.from_bytes(p[1:5], "little")
+            room = len(p) - ENC_META
+            if length > room or (p[0] == ENC and length != room):
                 return None
             if int.from_bytes(p[9:11], "little") >= 1000:  # the clock's milliseconds
                 return None
-            self._salt12 = p[5:13] + self.local_nonce
-            plain = self._xotp(p[ENC_488_META:])
-            if not _equal(self._tag(plain)[:8], p[13:21]):
-                return None
-            return plain
+            other = _DIR["server"] if self._role == "client" else _DIR["client"]
+            header = p[:13]
+            return ascon.decrypt(self._session_key, _session_nonce(header, other), p[ENC_META:ENC_META + length],
+                                 header, p[13:21])
+
+    def _seal(self, key: bytes, data) -> bytes:
+        plain = _bytes(data)
+        if self._sender is None:
+            self._sender = self._rand(8)
+        sec, ms, counter = self._next_clock()
+        head = (bytes([ENC_PACK]) + len(plain).to_bytes(4, "little") + sec.to_bytes(4, "little")
+                + ms.to_bytes(2, "little") + counter.to_bytes(2, "little") + self._sender)
+        cipher, tag = ascon.encrypt(key, head[5:21], plain, head[:5], _TAG)
+        return head + tag + cipher
+
+    @staticmethod
+    def _open(key: bytes, packet: bytes) -> bytes | None:
+        p = bytes(packet)
+        if len(p) < ENC_PACK_META or p[0] != ENC_PACK:
+            return None
+        if int.from_bytes(p[1:5], "little") != len(p) - ENC_PACK_META or int.from_bytes(p[9:11], "little") >= 1000:
+            return None
+        return ascon.decrypt(key, p[5:21], p[ENC_PACK_META:], p[:5], p[21:29])
 
     def encrypt_pack(self, data) -> bytes:
-        """ENC_PACK with this key and a random nonce; needs no login."""
+        """ENC_PACK with this key; needs no login."""
         with self._lock:
-            self._require_key()
-            plain = _bytes(data)
-            self._set_clock_nonce(self._rand(4))
-            tag = self._tag(plain)
-            return (bytes([ENC_PACK]) + len(plain).to_bytes(4, "little") + self._salt12 + tag[:8]
-                    + self._xotp(plain))
+            if self._key is None:
+                raise RuntimeError("Set a key before encryption or authentication")
+            return self._seal(self._key, data)
 
     def decrypt_pack(self, packet: bytes) -> bytes | None:
         with self._lock:
-            if not self._has_key or not self._sized(bytes(packet), ENC_PACK, ENC_PACK_META, True):
-                return None
-            p = bytes(packet)
-            self._salt12 = p[5:17]
-            plain = self._xotp(p[ENC_PACK_META:])
-            if not _equal(self._tag(plain)[:8], p[17:25]):
-                return None
-            return plain
+            return None if self._key is None else self._open(self._key, packet)
 
     def encrypt_e2e(self, data, key) -> bytes:
-        """ENC_PACK with another key, leaving the session key and salt as they were."""
-        return self._with_key(key, lambda: self.encrypt_pack(data))
+        """ENC_PACK with an E2E key (string or bytes), leaving the session as it was."""
+        with self._lock:
+            return self._seal(derive_key(key), data)
 
     def decrypt_e2e(self, packet: bytes, key) -> bytes | None:
-        return self._with_key(key, lambda: self.decrypt_pack(packet))
-
-    def _with_key(self, key, operation):
-        k = _bytes(key)
-        if not k:
-            raise ValueError("Key must not be empty")
-        with self._lock:
-            saved = (self._key32, self._has_key, self._salt12)
-            try:
-                self._key32, self._has_key = sha256(k), True
-                return operation()
-            finally:
-                self._key32, self._has_key, self._salt12 = saved
+        return self._open(derive_key(key), packet)

@@ -3,7 +3,7 @@
 Behavior follows the JS client (iosignal src/client/IOCore.js) as the Kotlin client ports it:
 
 - Anonymous connection (CID_REQ), or Boho login with :meth:`IOSignal.auth`. A logged-in ``ws://`` session
-  encrypts signals, subscriptions, IAM and calls as ENC_488 (JS ENC_MODE.AUTO); ``wss://`` relies on TLS.
+  encrypts signals, subscriptions, IAM and calls as ENC (Boho on Ascon, JS ENC_MODE.AUTO); ``wss://`` relies on TLS.
 - Subscriptions are remembered and sent again after every reconnect.
 - A keepalive task checks the connection every 3 s: reconnects with jitter and backoff, closes a connection
   whose server never says hello or stops answering, and PINGs when nothing was received for 40 s.
@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
 from . import mbp
-from .boho import ENC_488_META, Boho
+from .boho import ENC_META, Boho
 from .protocol import (
     IOMsg, PayloadType, Signal, State, decode_signal, encode_payload, encode_subscription_tags, encode_tag,
     max_message_bytes, signal_packet, signal_size, subscription_batches, tagged,
@@ -238,7 +238,7 @@ class IOSignal:
 
     @property
     def is_encrypted(self) -> bool:
-        """True when packets go as ENC_488: logged in over ``ws://``."""
+        """True when packets go as ENC: logged in over ``ws://``."""
         return self.is_authorized and not self._tls
 
     @property
@@ -541,10 +541,10 @@ class IOSignal:
         header = bytes([IOMsg.SIGNAL_E2E, len(tag_bytes)]) + tag_bytes + bytes([PayloadType.BINARY])
         if not self.is_encrypted:
             return self._send_raw(header + secret)
-        enc = self._boho.encrypt_488(header)  # the header only: the payload is sealed already
+        enc = self._boho.encrypt_session(header, IOMsg.ENC_E2E)  # the header only: the payload is sealed already
         if enc is None:
             return False
-        return self._send_raw(bytes([IOMsg.ENC_E2E]) + enc[1:] + secret)
+        return self._send_raw(enc + secret)
 
     def decrypt_e2e(self, data: bytes, key: str | bytes) -> bytes | None:
         """The plain bytes of a received E2E signal (``Signal.e2e``), or None for another key or a forgery."""
@@ -562,7 +562,7 @@ class IOSignal:
                 self._send_error = "not connected"
                 return False
             return self._send_raw(packet)
-        enc = self._boho.encrypt_488(packet)
+        enc = self._boho.encrypt_session(packet)
         if enc is None:
             self._send_error = "not connected"
             return False
@@ -740,15 +740,15 @@ class IOSignal:
         if not received:
             return
         buffer = received
-        if received[0] == IOMsg.ENC_488:
-            buffer = self._boho.decrypt_488(received) if self._boho else None
+        if received[0] == IOMsg.ENC:
+            buffer = self._boho.decrypt_session(received) if self._boho else None
             if buffer is None:
                 return  # dropped, as in JS
         elif received[0] == IOMsg.ENC_E2E:  # session-encrypted SIGNAL_E2E header, then the E2E payload
-            header = self._boho.decrypt_488(received) if self._boho else None
+            header = self._boho.decrypt_session(received) if self._boho else None
             if header is None:
                 return
-            buffer = header + bytes(received[ENC_488_META + len(header):])
+            buffer = header + bytes(received[ENC_META + len(header):])
         if not buffer:
             return
         t = buffer[0]

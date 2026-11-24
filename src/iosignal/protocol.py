@@ -27,13 +27,14 @@ TAG_MAX_BYTES = 255
 class IOMsg(IntEnum):
     """One-byte message types (iosignal IOMsg and boho BohoMsg)."""
 
-    # Boho reserves 0xB0~0xBF.
+    # Boho reserves 0xB0~0xBF. Boho 3 (Ascon); the Boho 2.x codes 0xB1, 0xB2, 0xB6~0xB8 are not used.
     SERVER_TIME_NONCE = 0xB0  # SERVER_READY
-    AUTH_REQ = 0xB1
-    AUTH_RES = 0xB2
     AUTH_FAIL = 0xB3
-    ENC_E2E = 0xB7
-    ENC_488 = 0xB8
+    AUTH_REQ = 0xB4
+    AUTH_RES = 0xB5
+    ENC_PACK = 0xB9
+    ENC_E2E = 0xBA
+    ENC = 0xBB
 
     SERVER_READY = 0xC0
     CID_REQ = 0xC1
