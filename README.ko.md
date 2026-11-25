@@ -126,6 +126,7 @@ lamp.set(on="1")   # 내 코드에서 바꿔도 앱에 바로 보임
 
 - 보드 하나가 CID 하나, 장치 하나입니다. 옵션: `name`, `type`, `state`(`"on=0;level=50"`, 키 순서 유지), `buttons`, `panel`, `view`, `on_command(cmd, device)`, `on_change(device)`.
 - 콜백은 링크의 타이머 안에서 돌므로 짧게 씁니다. 콜백 오류는 `board.status()`에 남고 링크는 계속 돕니다.
+- 링크는 칩의 가장 큰 하드웨어 타이머를 씁니다(ESP32·ESP32-S3 `Timer(3)`, ESP32-C3 `Timer(1)`, `/iosignal.json`의 `"timer"`로 바꿈). 내 코드는 `Timer(board.free_timer())`(보통 0)를 씁니다. 링크의 타이머를 다시 `init`하거나 `deinit`하면 리셋할 때까지 링크가 조용히 멈춥니다.
 - 다른 장치: `board.subscribe("abc-123@$state", fn)`, `board.signal("abc-123@", "r1=1")`. 예: [examples/board_relay_buttons.py](examples/board_relay_buttons.py).
 - 코드 없이: `/iosignal.json`에 `"device"` 항목(예: `{"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true}`)을 두면 핀 장치가 됩니다(light.1, dimmer.1 PWM, relay4.1, switch2.1~8.1).
 - 다른 예: [examples/board_iris.py](examples/board_iris.py)(RGB LED 4개의 iris.2 조명, 버튼 2를 누르고 있으면 LED로 Wi-Fi 신호와 연결 상태 표시), [examples/board_light.py](examples/board_light.py), 한 번 실행하는 짧은 예 [blink.py](examples/blink.py), [button_read.py](examples/button_read.py), [board_info.py](examples/board_info.py). [board_default.py](examples/board_default.py)는 기본 `main.py`(연결만)입니다.

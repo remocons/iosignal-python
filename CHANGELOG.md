@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- MicroPython boards: the link runs on the chip's highest hardware timer (ESP32, ESP32-S3: `Timer(3)`; ESP32-C3:
+  `Timer(1)`) instead of `Timer(0)`, so code copied from tutorials, which start at `Timer(0)`, no longer stops it.
+  `"timer"` in `/iosignal.json` picks another number; `board.status()` shows it. New `board.free_timer()`: a timer
+  the link does not use. The button examples use it (and `Timer(1)` with an older package).
+
 ## 0.2.2 (2026-11-25)
 
 - `iosignal.ascon` checks the native permutation (`ascon_fast`) against known answers when it is imported and uses

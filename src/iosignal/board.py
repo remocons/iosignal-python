@@ -19,6 +19,8 @@ modules). A main.py that calls board.device() itself replaces it.
 
 "txpower" (optional): Wi-Fi send power in dBm. Small ESP32-C3 boards (iris) lose sent packets at full power
 until TCP stalls; 8.5 fixes it. Wi-Fi power save is always off.
+"timer" (optional): the hardware timer number the link runs on; default the highest the chip has (ESP32,
+S3: 3; C3, C6: 1), so user code can take Timer(0). Never give user code the same number.
 "wifi_mode" (optional): "b" for 802.11b only (slower, but holds on a much weaker signal: a far room), "bg", "bgn".
 /linklog.txt: every drop and reconnect with UTC time and the Wi-Fi signal, kept near 4 KB ("linklog": false: off).
 
@@ -42,7 +44,7 @@ def _load(path):
 def start(config="/iosignal.json"):
     """Starts the link from the config files; returns it, or None (with the reason printed) when it cannot."""
     global link, _name
-    if link is not None and link.timer:  # e.g. main.py run again from the REPL: a second link would take Timer(0)
+    if link is not None and link.timer:  # e.g. main.py run again from the REPL: a second link would take the same timer
         print("iosignal: already started")
         return link
     cfg = _load(config)
@@ -63,7 +65,7 @@ def start(config="/iosignal.json"):
     link = replpoll.start(cfg["server"], key, auth,
                           wifi=(wifi["ssid"], wifi["password"]) if wifi else None,
                           name=cfg.get("name"), txpower=cfg.get("txpower"), wifi_mode=cfg.get("wifi_mode"),
-                          linklog=cfg.get("linklog", True))
+                          linklog=cfg.get("linklog", True), timer=cfg.get("timer"))
     _name = cfg.get("name")
     del key, device, repl, wifi
     if cfg.get("device"):
@@ -149,6 +151,13 @@ def signal(tag, text=""):
     return link is not None and link.signal(tag, text)
 
 
+def free_timer():
+    """A hardware timer number the link does not use, for the board's own code: 0 unless the link runs on 0
+    (a "timer": 0 config). The link takes the highest one (ESP32, S3: 3; C3, C6: 1)."""
+    used = link.timer_id if link is not None and link.timer else None
+    return 1 if used == 0 else 0
+
+
 def status():
     """A short line about the link, for the USB REPL."""
     if link is None:
@@ -158,7 +167,7 @@ def status():
              else "waiting for Wi-Fi" if l.wlan is not None and not l.wlan.isconnected()
              else "setting the clock" if not l.clock_ok else "retrying")
     dev = l.device
-    return "%s, cid %s, session %s, stats %s, recent errors %s%s" % (
-        phase, l.cid or "-", l.owner or "none", l.stats, l.errors,
+    return "%s, cid %s, timer %s, session %s, stats %s, recent errors %s%s" % (
+        phase, l.cid or "-", l.timer_id, l.owner or "none", l.stats, l.errors,
         ", device %s %s commands %d errors %s" % (dev.type or "-", dev.state.text(), dev.commands, dev.errors)
         if dev else "")

@@ -9,7 +9,7 @@
 # State: on=1;h=30;b=50;h1=30;b1=50;...  h only when the four hues are equal, b is the brightest LED.
 # Wi-Fi: iris boards lose sent packets at full power until the connection stalls; set "Wi-Fi 송신 출력"
 # 8.5 dBm on the USB setup page ("txpower": 8.5 in /iosignal.json). The link applies it when Wi-Fi comes up.
-# Buttons, polled on Timer(1) like the relay button example (main.py returns at once, the REPL stays free):
+# Buttons, polled on a timer like the relay button example (main.py returns at once, the REPL stays free):
 #   button 1 (GPIO 1) turns every LED's hue by HUE_STEP degrees (each press a new color; LEDs keep their
 #   differences), and lights the LEDs if they were off; button 2 (GPIO 2) turns them on or off (on release).
 # Signal check without a computer: hold button 2 for 1 s. For SIGNAL_S seconds (or until a button is pressed)
@@ -205,6 +205,7 @@ def poll(_t):
         update(lamp)
 
 
-timer = Timer(1)
+# board.free_timer(): a timer the link does not use (older packages, whose link took Timer(0): 1)
+timer = Timer(board.free_timer() if hasattr(board, "free_timer") else 1)
 timer.init(period=10, mode=Timer.PERIODIC, callback=poll)
 # lamp.command("h=120") from the REPL acts as if an app sent it

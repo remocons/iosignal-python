@@ -16,6 +16,10 @@ the broker relays only sealed bytes, and only a controller holding the REPL key 
     controller -> <board>@repl   1 open    3 in <bytes>    5 close
     board -> <controller>@repl   2 opened  4 out <bytes>   6 closed <reason>
 
+The link takes the highest hardware timer the chip has (ESP32, S3: Timer(3); C3, C6: Timer(1)), so code
+copied from tutorials, which start at Timer(0), does not take it over; ``timer=`` (``"timer"`` in
+/iosignal.json) picks another. Two users of one timer: the last ``init`` wins and the other stops silently.
+
 MicroPython only (machine.Timer, os.dupterm).
 """
 
@@ -98,7 +102,7 @@ class Term(io.IOBase):
 
 class ReplLink:
     def __init__(self, url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True, txpower=None,
-                 wifi_mode=None, linklog=True):
+                 wifi_mode=None, linklog=True, timer=None):
         if url.startswith("cong://"):
             url = url[7:]
         host, _, port = url.rpartition(":")
@@ -153,13 +157,16 @@ class ReplLink:
         self.errors = []
         self.stats = {"rx": 0, "tx": 0, "ticks": 0, "connects": 0, "refused": 0, "replayed": 0}
         self.timer = None
+        self.timer_id = timer         # hardware timer number; None: the highest one (last_timer)
 
     # ---- lifecycle
 
     def start(self):
         if self.base is not None:
             os.dupterm(self.term)
-        self.timer = machine.Timer(0)
+        if self.timer_id is None:
+            self.timer_id = last_timer()
+        self.timer = machine.Timer(self.timer_id)
         self.timer.init(period=self.period_ms, mode=machine.Timer.PERIODIC, callback=self._tick)
         return self
 
@@ -698,7 +705,7 @@ class ReplLink:
         import gc
         gc.collect()
         info = {"mpy": "%d.%d.%d" % sys.implementation.version[:3], "machine": os.uname().machine,
-                "mem_free": gc.mem_free(), "mode": "timer"}
+                "mem_free": gc.mem_free(), "mode": "timer", "timer": self.timer_id}
         body = {"v": 2 if b_pub else 1, "cnonce": to_hex(cnonce), "bnonce": to_hex(bnonce), "info": info}
         if b_pub:
             body["b"] = to_hex(b_pub)
@@ -861,10 +868,24 @@ def _now_s():
 link = None
 
 
+def last_timer():
+    """The highest hardware timer number this chip has (ESP32, S3: 3; C3, C6: 1), 0 if none answers.
+    Making a Timer object does not start or change the timer."""
+    import machine
+    for n in (3, 2, 1):
+        try:
+            machine.Timer(n)
+            return n
+        except Exception:  # noqa: BLE001 - ValueError on ports without that timer
+            pass
+    return 0
+
+
 def start(url, key, auth=None, period_ms=20, wifi=None, name=None, announce=True, txpower=None, wifi_mode=None,
-          linklog=True):
+          linklog=True, timer=None):
     """Starts the link and returns at once; the REPL keeps the main thread. ``key``: the REPL key
     (bytes, 32 recommended). None: no remote REPL (no dupterm, @repl refused), the board can still be a device."""
     global link
-    link = ReplLink(url, key, auth, period_ms, wifi, name, announce, txpower, wifi_mode, linklog).start()
+    link = ReplLink(url, key, auth, period_ms, wifi, name, announce, txpower, wifi_mode, linklog,
+                    timer).start()
     return link

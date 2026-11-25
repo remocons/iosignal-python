@@ -126,6 +126,7 @@ lamp.set(on="1")   # changes from your own code show in the apps at once
 
 - One board is one CID and one device. Options: `name`, `type`, `state` (`"on=0;level=50"`, key order kept), `buttons`, `panel`, `view`, `on_command(cmd, device)`, `on_change(device)`.
 - Callbacks run in the link's timer: keep them short. Their errors go to `board.status()` and the link keeps running.
+- The link runs on the chip's highest hardware timer (ESP32, ESP32-S3: `Timer(3)`; ESP32-C3: `Timer(1)`; `"timer"` in `/iosignal.json` picks another). Your code takes `Timer(board.free_timer())` (usually 0). If your code re-`init`s or `deinit`s the link's timer, the link stops silently until a reset.
 - Other devices: `board.subscribe("abc-123@$state", fn)` and `board.signal("abc-123@", "r1=1")`. Example: [examples/board_relay_buttons.py](examples/board_relay_buttons.py).
 - Without code: a `"device"` entry in `/iosignal.json`, for example `{"type": "relay4.1", "pins": [16, 17, 18, 19], "invert": true}`, makes a pin device (light.1, dimmer.1 PWM, relay4.1, switch2.1~8.1).
 - More examples: [examples/board_iris.py](examples/board_iris.py) (an iris.2 light with four RGB LEDs; hold button 2 to show the Wi-Fi signal and connection on the LEDs), [examples/board_light.py](examples/board_light.py), and short scripts to run once: [blink.py](examples/blink.py), [button_read.py](examples/button_read.py), [board_info.py](examples/board_info.py). [board_default.py](examples/board_default.py) is the plain `main.py` (link only).

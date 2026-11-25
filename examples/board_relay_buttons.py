@@ -6,8 +6,8 @@
 # As the device rules ask of a controller, the board follows the relay's $state and sends no toggle before it
 # knows the state: a press sends "r1=1" or "r1=0" (the opposite of the last state) to <relay>@.
 #
-# The buttons are polled every POLL_MS by a timer (Timer(1); the IOSignal link uses Timer(0)), so main.py
-# returns at once and the REPL (USB and remote) stays free. A button counts as pressed only after it has read
+# The buttons are polled every POLL_MS by a timer (board.free_timer(): Timer(0); the IOSignal link takes the
+# highest one), so main.py returns at once and the REPL (USB and remote) stays free. A button counts as pressed only after it has read
 # LOW for STABLE_MS in a row, and must read HIGH for STABLE_MS before it can count again: contact bounce on
 # press or release, and holding the button down, give exactly one press.
 import iosignal.board as board
@@ -77,6 +77,7 @@ def poll(_t):
 
 
 board.subscribe(TARGET + "@$state", on_state)
-timer = Timer(1)
+# board.free_timer(): a timer the link does not use (older packages, whose link took Timer(0): 1)
+timer = Timer(board.free_timer() if hasattr(board, "free_timer") else 1)
 timer.init(period=POLL_MS, mode=Timer.PERIODIC, callback=poll)
 # to stop polling from the REPL: timer.deinit()
