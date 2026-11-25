@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (2026-11-25)
 
 - MicroPython boards: the link runs on the chip's highest hardware timer (ESP32, ESP32-S3: `Timer(3)`; ESP32-C3:
   `Timer(1)`) instead of `Timer(0)`, so code copied from tutorials, which start at `Timer(0)`, no longer stops it.
