@@ -143,7 +143,7 @@ lamp.set(on="1")   # changes from your own code show in the apps at once
 A board with a REPL key can be used like `mpremote` from anywhere, through IOSignal. Sessions are sealed with the REPL key and one-time X25519 keys (forward secrecy), so the broker relays only sealed bytes.
 
 ```sh
-# REPL key (64 hex digits): paste it when asked (not shown), or export REPL_KEY=<key>, -k <key>, or a key file ~/.iosignal/repl-<board>.key
+# REPL key (XXXXX-XXXXX-XXXXX-XXXXX-XXXXX, an older 64-digit hex key, or a passphrase of 10+ characters): paste it when asked (not shown), or export REPL_KEY=<key>, -k <key>, or a key file ~/.iosignal/repl-<board>.key
 iosignal-repl find                    # boards on the same network
 iosignal-repl repl                    # interactive (Ctrl-] leaves, Ctrl-C goes to the board)
 iosignal-repl exec "print(1+1)"       # streamed output, exit code 1 on an exception

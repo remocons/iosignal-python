@@ -177,6 +177,8 @@ def apply_command(state: Mapping[str, str], command: str) -> tuple[dict[str, str
     before = {k: v for k, v in state.items() if k != RAW_STATE}
     nxt = dict(before)
     cmd = str(command if command is not None else "").strip()
+    if cmd == "?":  # asks for the state only (the apps' check): nothing changes
+        return dict(state), False
     if cmd in ("on", "off"):
         nxt["on"] = "1" if cmd == "on" else "0"
     elif cmd == "toggle":

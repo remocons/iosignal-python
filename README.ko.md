@@ -143,7 +143,7 @@ lamp.set(on="1")   # 내 코드에서 바꿔도 앱에 바로 보임
 REPL 키가 있는 보드는 어디서나 IOSignal을 거쳐 `mpremote`처럼 다룰 수 있습니다. 세션은 REPL 키와 일회용 X25519 키로 봉하므로(forward secrecy) 브로커는 봉한 바이트만 전달합니다.
 
 ```sh
-# REPL 키(64자리 hex): 묻는 칸에 붙여 넣거나(화면에 안 보임), export REPL_KEY=<키>, -k <키>, 또는 키 파일 ~/.iosignal/repl-<보드>.key
+# REPL 키(XXXXX-XXXXX-XXXXX-XXXXX-XXXXX, 예전 64자리 hex, 또는 10자 이상 비밀 문구): 묻는 칸에 붙여 넣거나(화면에 안 보임), export REPL_KEY=<키>, -k <키>, 또는 키 파일 ~/.iosignal/repl-<보드>.key
 iosignal-repl find                    # 같은 네트워크의 보드
 iosignal-repl repl                    # 대화형 (Ctrl-] 나가기, Ctrl-C는 보드로)
 iosignal-repl exec "print(1+1)"       # 출력이 오는 대로, 예외면 종료 코드 1

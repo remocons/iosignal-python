@@ -129,6 +129,8 @@ class State:
     def apply(self, command):
         """The standard command handling; returns True when the state changed."""
         cmd = str(command).strip()
+        if cmd == "?":  # asks for the state only (the apps' check)
+            return False
         if cmd in ("on", "off"):
             return self.put("on", "1" if cmd == "on" else "0")
         if cmd == "toggle":

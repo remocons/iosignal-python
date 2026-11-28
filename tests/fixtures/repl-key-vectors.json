@@ -1,0 +1,81 @@
+{
+ "about": "REPL key text -> key bytes (src/iosignal/replkey.py, web/replclient.js replKeyBytes). kind short/empty: no key.",
+ "cases": [
+  {
+   "name": "hex 64 (old keys)",
+   "text": "abababababababababababababababababababababababababababababababab",
+   "kind": "hex",
+   "hex": "abababababababababababababababababababababababababababababababab"
+  },
+  {
+   "name": "hex 32, upper, spaces around",
+   "text": "  0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F\n",
+   "kind": "hex",
+   "hex": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+  },
+  {
+   "name": "base32 grouped",
+   "text": "7K3M9-QXRT2-HDWB8-N4CFP-VJ6YZ",
+   "kind": "base32",
+   "hex": "0798e89bf71a145bc5a2a463edb91bdf"
+  },
+  {
+   "name": "base32 plain, lower, O I L read as 0 1 1",
+   "text": "7k3moqxrtihdwbln4cfpvj6yz",
+   "kind": "base32",
+   "hex": "0798e80bf71a0c5bc586a463edb91bdf"
+  },
+  {
+   "name": "base32 largest",
+   "text": "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ",
+   "kind": "base32",
+   "hex": "1fffffffffffffffffffffffffffffff"
+  },
+  {
+   "name": "passphrase ascii",
+   "text": "correct horse battery",
+   "kind": "passphrase",
+   "hex": "126190a1a4c5429f912ac74951e54b0d69e26feeef52d76e4ef0865e5b284ec8"
+  },
+  {
+   "name": "passphrase Korean, NFD input same as NFC",
+   "text": "우리집 보드 비밀 문구",
+   "kind": "passphrase",
+   "hex": "3a9823ee5bb9b310d2f5f0195a27ab11f7481eae3779cf2a1d9887467c4b0301"
+  },
+  {
+   "name": "passphrase Korean NFC",
+   "text": "우리집 보드 비밀 문구",
+   "kind": "passphrase",
+   "hex": "3a9823ee5bb9b310d2f5f0195a27ab11f7481eae3779cf2a1d9887467c4b0301"
+  },
+  {
+   "name": "30 hex digits is a passphrase",
+   "text": "0123456789abcdef0123456789abcd",
+   "kind": "passphrase",
+   "hex": "f535da04aa640bc245f6ea070df27020c0c2fe53fa6a3dbb604b1b2930189401"
+  },
+  {
+   "name": "U is not base32: passphrase",
+   "text": "UUUUU-UUUUU-UUUUU-UUUUU-UUUUU",
+   "kind": "passphrase",
+   "hex": "ef7e23c80b8903140d9f4ba562b2aa9872215cd61a21d83ce57ec4db2e681b2d"
+  },
+  {
+   "name": "base32 bad grouping: passphrase",
+   "text": "7K3M-9QXR-T2HD-WB8N-4CFP-VJ6Y-Z",
+   "kind": "passphrase",
+   "hex": "996d1af51df46bfffba82e5ee7caf6a20270989b068e9844edc4448dcc28f227"
+  },
+  {
+   "name": "short",
+   "text": "abc123",
+   "kind": "short"
+  },
+  {
+   "name": "empty",
+   "text": "   ",
+   "kind": "empty"
+  }
+ ]
+}

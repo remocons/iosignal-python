@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- REPL keys come in three forms (`iosignal.replkey`, the same rule as the web IDE): hex of 32+ digits as before
+  (the 64-digit keys keep working), a 25-symbol key `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` (Crockford base32, 125 random
+  bits, case and dashes free), or a passphrase of 10+ characters (PBKDF2-HMAC-SHA256, 600000 rounds). `iosignal-repl`
+  takes any of them with `-k`, `REPL_KEY`, a key file or the prompt; `tools/mpy_repl_key.py` now makes the short key.
+  Boards still store the key bytes as hex in `/repl.json`, so existing boards need no change. A passphrase can be
+  guessed offline by anyone who sees a session's first frame (the broker included): prefer the random key.
+- Boards: a bad `/repl.json` key turns the remote REPL off instead of stopping `board.start()`.
+- Devices: the command `?` only asks for the state (`apply_command`, `board.device()`): nothing changes, the state is
+  sent as usual.
+
 ## 0.2.3 (2026-11-25)
 
 - MicroPython boards: the link runs on the chip's highest hardware timer (ESP32, ESP32-S3: `Timer(3)`; ESP32-C3:

@@ -11,7 +11,7 @@ link's timer callback, and come back by themselves when lost. Files on the board
                      "txpower": 8.5}
     /device.json    {"key": "<device key>"}          login key of "id" (tools/mpy_board_setup.py, never printed)
     /wifi.json      {"ssid": "...", "password": "..."}  (tools/mpy_wifi_setup.py)
-    /repl.json      {"key": "<64 hex>"}               REPL key (tools/mpy_repl_key.py); no key: no remote REPL
+    /repl.json      {"key": "<hex, 32+ digits>"}      REPL key bytes (tools/mpy_repl_key.py, web setup); no key: no remote REPL
 
 "device" (optional) makes the board a device driving pins (pin_device): light.1 (1 pin), dimmer.1 (1 PWM pin),
 relay4.1 (4 pins), switch2.1/3.1/4.1/8.1 (2/3/4/8 pins); "invert" for outputs that are on at LOW (relay
@@ -58,8 +58,16 @@ def start(config="/iosignal.json"):
     if cfg.get("id") and not auth:
         print("iosignal: %s has an id but /device.json has no key, not started" % config)
         return None
-    key = bytes.fromhex(repl["key"]) if cfg.get("repl", True) and repl.get("key") else None
-    if not key:
+    key = None
+    if cfg.get("repl", True) and repl.get("key"):
+        try:
+            key = bytes.fromhex(repl["key"])  # the key bytes as hex: any length from 16 bytes (32 digits)
+        except (ValueError, TypeError):
+            key = b""
+        if len(key) < 16:  # a bad key must not stop the board: the device part still runs
+            print("iosignal: /repl.json key is not hex of 16 bytes or more: the remote REPL stays off")
+            key = None
+    else:
         print("iosignal: no REPL key (/repl.json) or repl off: the remote REPL stays off (device only)")
     from . import replpoll
     link = replpoll.start(cfg["server"], key, auth,

@@ -11,7 +11,7 @@
 
 Options and environment:
     -s/--server URL   IOSIGNAL_SERVER   default wss://io.iosignal.net/ws
-    -k/--key KEY      REPL_KEY          the REPL key as 64 hex digits (or, as before, a file that holds it)
+    -k/--key KEY      REPL_KEY          the REPL key: hex, XXXXX-XXXXX-XXXXX-XXXXX-XXXXX or a passphrase (or a file that holds it)
                       REPL_KEY_FILE     a key file; default ~/.iosignal/repl-<board>.key
     -b/--board CID    IOSIGNAL_BOARD    default: the only micropython.1 board found on this network
 
@@ -24,11 +24,10 @@ import argparse
 import asyncio
 import getpass
 import os
-import re
 import sys
 import time
 
-from . import devices
+from . import devices, replkey
 from .client import IOSignal
 from .replhost import FsError, RawRepl, ReplSession
 
@@ -49,23 +48,27 @@ async def find_boards(io: IOSignal, wait=1.5):
     return [d for d in await devices.discover(io, wait=wait) if is_repl_board(d)]
 
 
-_HEX_KEY = re.compile(r"^[0-9a-fA-F]{64}$")
-
-
 def _key_text(text: str, where: str) -> bytes:
-    text = text.strip()
-    if not _HEX_KEY.match(text):
-        raise CliError("the REPL key %s is not 64 hex digits" % where)
-    return bytes.fromhex(text)
+    """hex, the 25-symbol key or a passphrase (replkey.py)."""
+    try:
+        return replkey.key_bytes(text)
+    except ValueError as e:
+        raise CliError("the REPL key %s: %s" % (where, e)) from None
+
+
+def _looks_like_path(text: str) -> bool:
+    return "/" in text or text.startswith("~") or text.endswith(".key")
 
 
 def key_for(board: str, given: str | None, ask=None) -> bytes:
     """The REPL key: -k (the key itself, or a key file), REPL_KEY, REPL_KEY_FILE, ~/.iosignal/repl-<board>.key,
     then ``ask()`` (a terminal prompt) when nothing was found."""
     if given:
-        if _HEX_KEY.match(given.strip()):
+        if replkey.kind(given) in ("hex", "base32"):
             return _key_text(given, "given with -k")
-        return _key_file(given)
+        if os.path.isfile(os.path.expanduser(given)) or _looks_like_path(given):
+            return _key_file(given)  # a path that is not there is an error, not a passphrase
+        return _key_text(given, "given with -k")
     if os.environ.get("REPL_KEY"):
         return _key_text(os.environ["REPL_KEY"], "in REPL_KEY")
     if os.environ.get("REPL_KEY_FILE"):
@@ -75,7 +78,7 @@ def key_for(board: str, given: str | None, ask=None) -> bytes:
         return _key_file(default)
     if ask is not None:
         return _key_text(ask(), "typed")
-    raise CliError("no REPL key for %s: give -k KEY (64 hex digits), set REPL_KEY, or save it in %s"
+    raise CliError("no REPL key for %s: give -k KEY (the key or a passphrase), set REPL_KEY, or save it in %s"
                    % (board, default))
 
 
@@ -91,7 +94,7 @@ def _prompt(board: str):
     """Asks on the terminal when there is one; None (no prompt) for pipes and scripts."""
     if not (sys.stdin.isatty() and sys.stderr.isatty()):
         return None
-    return lambda: getpass.getpass("REPL key for %s (64 hex digits, not shown): " % board)
+    return lambda: getpass.getpass("REPL key or passphrase for %s (not shown): " % board)
 
 
 async def connect(args):
@@ -412,7 +415,7 @@ def parser():
     p = argparse.ArgumentParser(prog="iosignal-repl", description=__doc__.splitlines()[0],
                                 formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     p.add_argument("-s", "--server", default=os.environ.get("IOSIGNAL_SERVER", DEFAULT_SERVER))
-    p.add_argument("-k", "--key", default=None, help="REPL key: 64 hex digits, or a file holding them")
+    p.add_argument("-k", "--key", default=None, help="REPL key (hex, XXXXX-XXXXX-..., or a passphrase), or a file holding it")
     p.add_argument("-b", "--board", default=os.environ.get("IOSIGNAL_BOARD"), help="board CID")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("find")
