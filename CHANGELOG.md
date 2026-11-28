@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.5 (not on PyPI yet)
+## 0.2.5 (2026-11-28)
 
 - `iosignal-repl repl` (typed, pasted and piped input) and `ReplSession.send`: input goes out as 1 kB frames, a burst
   of 10, then at most 30 a second, below the public server's message quota (anonymous: 50/s); a long paste no
