@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 (not on PyPI yet)
+
+- `iosignal-repl repl` (typed, pasted and piped input) and `ReplSession.send`: input goes out as 1 kB frames, a burst
+  of 10, then at most 30 a second, below the public server's message quota (anonymous: 50/s); a long paste no
+  longer loses frames. A lone Ctrl-C drops the rest of a paste and goes first. `ReplSession.drain_input()` waits
+  for the queue. The same rule as the web IDE.
+
 ## 0.2.4 (2026-11-28)
 
 - REPL keys come in three forms (`iosignal.replkey`, the same rule as the web IDE): hex of 32+ digits as before

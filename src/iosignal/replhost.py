@@ -35,6 +35,14 @@ class FsError(OSError):
     pass
 
 
+# Typed, pasted and piped input: 1 kB frames, a short burst at once, then at most IN_PER_SEC a second, so a long
+# paste stays below the server's message quota (anonymous: 50/s on io.iosignal.net) instead of losing frames.
+# The same rule as the web IDE (web/replclient.js).
+IN_CHUNK = 1024
+IN_PER_SEC = 30
+IN_BURST = 10
+
+
 class ReplSession:
     """A sealed REPL session with a board running iosignal.replpoll."""
 
@@ -57,6 +65,10 @@ class ReplSession:
         self.on_closed = None  # function(reason): the board closed the session (close, taken)
         self.changed = asyncio.Event()
         self.files = Files(self)
+        self._in = []           # input frames waiting for their turn
+        self._in_tokens = float(IN_BURST)
+        self._in_at = time.monotonic()
+        self._in_timer = None
         io.on("@repl", self._rx)
 
     def _rx(self, s):
@@ -137,10 +149,44 @@ class ReplSession:
         return self.info
 
     def close(self):
+        self._in.clear()  # input not sent yet is dropped
+        if self._in_timer:
+            self._in_timer.cancel()
+            self._in_timer = None
         self.send_frame(CLOSE)
 
     def send(self, text):
-        self.send_frame(IN, text.encode() if isinstance(text, str) else text)
+        """Input for the board's REPL, paced (IN_BURST, then IN_PER_SEC frames of IN_CHUNK bytes). A lone Ctrl-C
+        while a paste is still going out drops the rest of it and goes first."""
+        data = text.encode() if isinstance(text, str) else bytes(text)
+        if data == b"\x03" and self._in:
+            self._in.clear()
+            self.send_frame(IN, data)
+            return
+        self._in.extend(data[i:i + IN_CHUNK] for i in range(0, len(data), IN_CHUNK))
+        self._drain_in()
+
+    def _drain_in(self):
+        self._in_timer = None
+        now = time.monotonic()
+        self._in_tokens = min(IN_BURST, self._in_tokens + (now - self._in_at) * IN_PER_SEC)
+        self._in_at = now
+        while self._in and self._in_tokens >= 1:
+            self._in_tokens -= 1
+            self.send_frame(IN, self._in.pop(0))
+        if self._in:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:  # no event loop (not how the CLI runs): send the rest at once
+                while self._in:
+                    self.send_frame(IN, self._in.pop(0))
+                return
+            self._in_timer = loop.call_later(1 / IN_PER_SEC, self._drain_in)
+
+    async def drain_input(self):
+        """Waits until all input given to send() has gone out."""
+        while self._in:
+            await asyncio.sleep(1 / IN_PER_SEC)
 
     async def wait(self, cond, timeout):
         end = time.monotonic() + timeout

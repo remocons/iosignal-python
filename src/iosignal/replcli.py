@@ -150,6 +150,7 @@ async def cmd_repl(io, args):
         s.send(b"\x02")  # leave raw REPL if an interrupted exec left the board there
         await asyncio.sleep(0.3)
         s.send(sys.stdin.buffer.read().replace(b"\n", b"\r"))
+        await s.drain_input()  # paced: a long input takes a while to go out
         await _quiet(s, 1.0)
         s.close()
         return 0
