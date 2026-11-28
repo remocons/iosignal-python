@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.4 (not on PyPI yet)
+## 0.2.4 (2026-11-28)
 
 - REPL keys come in three forms (`iosignal.replkey`, the same rule as the web IDE): hex of 32+ digits as before
   (the 64-digit keys keep working), a 25-symbol key `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` (Crockford base32, 125 random
