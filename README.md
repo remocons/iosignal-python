@@ -10,6 +10,7 @@ The same package runs on CPython 3.10+ (asyncio or blocking) and on MicroPython 
 - WebSocket (`ws://`, `wss://`) and TCP (`cong://`, the same link Arduino boards use)
 - [Device rules](https://docs.iosignal.net/docs/devices/types): make devices that appear in IOSignal apps, find and command them
 - MicroPython: a board becomes a device, and a sealed remote REPL with file transfer (`iosignal-repl`)
+- [Web IDE](https://python.iosignal.net/) (in Korean): set a board up over USB, then edit, run and transfer files in a browser from anywhere
 
 > **0.2.0 uses Boho 3 (Ascon).** It logs in only to IOSignal servers 10.0.0 or newer; anonymous connections
 > work with any server. Device keys made for 9.x servers must be issued and registered again, and boards
@@ -102,6 +103,8 @@ A `Device` answers `#search`, announces `$panel`, `$view`, `$name`, `$ui`, `$sta
 
 ### Install on a board
 
+The easiest way is the [USB setup page](https://python.iosignal.net/setup.html) in desktop Chrome or Edge: it flashes MicroPython, then puts this package, Wi-Fi, the server and login, and a REPL key on the board. See the [guide](https://python.iosignal.net/guide.html) (in Korean).
+
 With network on the board (MicroPython 1.28+):
 
 ```python
@@ -152,7 +155,9 @@ iosignal-repl ls / | cat /main.py | get /log.txt | put main.py | rm /x | mkdir /
 iosignal-repl info | reset
 ```
 
-Server: `-s` or `IOSIGNAL_SERVER` (default `wss://io.iosignal.net/ws`). Board: `-b` or `IOSIGNAL_BOARD`; without it, the only board on the network. Make a REPL key with [tools/mpy_repl_key.py](tools/mpy_repl_key.py).
+Server: `-s` or `IOSIGNAL_SERVER` (default `wss://io.iosignal.net/ws`). Board: `-b` or `IOSIGNAL_BOARD`; without it, the only board on the network. Make a REPL key with [tools/mpy_repl_key.py](tools/mpy_repl_key.py) or the USB setup page.
+
+The [web IDE](https://python.iosignal.net/) opens the same sealed session in a browser: the board's files, an editor and the REPL, examples, and files dropped from the computer go to the board.
 
 ## Not supported
 

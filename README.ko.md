@@ -10,6 +10,7 @@
 - WebSocket(`ws://`, `wss://`)과 TCP(`cong://`, 아두이노 보드와 같은 연결)
 - [장치 규칙](https://docs.iosignal.net/docs/devices/types): IOSignal 앱에 나타나는 장치 만들기, 찾기, 명령 보내기
 - MicroPython: 보드를 장치로, 봉한 원격 REPL과 파일 전송(`iosignal-repl`)
+- [웹 IDE](https://python.iosignal.net/): USB로 보드를 준비하고, 어디서나 브라우저로 파일 편집·실행과 전송
 
 > **0.2.0부터 Boho 3(Ascon)를 씁니다.** 로그인은 IOSignal 서버 10.0.0 이상에서만 됩니다(익명 연결은 어느 서버나
 > 됩니다). 9.x 서버용으로 만든 장치 키는 다시 발급·등록해야 하고, 보드에는 0.2.0 패키지를 USB로 다시 설치해야
@@ -102,6 +103,8 @@ with IOSignal("wss://io.iosignal.net/ws") as io:
 
 ### 보드에 설치
 
+가장 쉬운 방법은 데스크톱 Chrome·Edge에서 [USB 설정 페이지](https://python.iosignal.net/setup.html)를 여는 것입니다. MicroPython 굽기, 이 패키지, Wi-Fi, 서버·로그인, REPL 키를 차례로 넣습니다. 자세한 순서는 [안내](https://python.iosignal.net/guide.html)에 있습니다.
+
 보드가 네트워크에 붙어 있으면(MicroPython 1.28 이상):
 
 ```python
@@ -152,7 +155,9 @@ iosignal-repl ls / | cat /main.py | get /log.txt | put main.py | rm /x | mkdir /
 iosignal-repl info | reset
 ```
 
-서버는 `-s` 또는 `IOSIGNAL_SERVER`(기본 `wss://io.iosignal.net/ws`), 보드는 `-b` 또는 `IOSIGNAL_BOARD`이고, 안 주면 같은 네트워크에 하나뿐인 보드를 씁니다. REPL 키는 [tools/mpy_repl_key.py](tools/mpy_repl_key.py)로 만듭니다.
+서버는 `-s` 또는 `IOSIGNAL_SERVER`(기본 `wss://io.iosignal.net/ws`), 보드는 `-b` 또는 `IOSIGNAL_BOARD`이고, 안 주면 같은 네트워크에 하나뿐인 보드를 씁니다. REPL 키는 [tools/mpy_repl_key.py](tools/mpy_repl_key.py)나 USB 설정 페이지로 만듭니다.
+
+[웹 IDE](https://python.iosignal.net/)는 같은 봉한 세션을 브라우저에서 엽니다. 보드의 파일, 편집기와 REPL, 예제가 있고 컴퓨터의 파일을 끌어다 놓으면 보드에 올라갑니다.
 
 ## 지원하지 않는 것
 
