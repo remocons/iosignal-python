@@ -48,6 +48,7 @@
     "tests/test_package.py",
     "tests/test_protocol.py",
     "tests/test_replkey.py",
+    "tests/test_replput.py",
     "tests/test_sync.py",
     "tests/test_x25519.py",
     "tools/build_web_pkg.py",
