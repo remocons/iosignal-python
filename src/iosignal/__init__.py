@@ -16,4 +16,4 @@ __all__ = [
     "boho", "mbp", "protocol", "IOSignal", "AuthError", "PingError", "RpcError", "RpcResponse",
     "IOMsg", "PayloadType", "Signal", "State",
 ]
-__version__ = "0.2.3"
+__version__ = "0.2.4"

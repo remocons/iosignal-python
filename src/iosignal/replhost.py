@@ -191,29 +191,85 @@ class Files:
         self.incoming[int.from_bytes(data[:4], "little")] = data[4:]
 
     async def request(self, op, timeout=10.0, **args):
+        # Each reply carries its op: a late reply to something else (an abort, a timed-out request) is not taken.
         self.replies.clear()
         self.s.send_frame(FS, json.dumps(dict(args, op=op)).encode())
+
+        def mine():
+            return next((i for i, r in enumerate(self.replies) if r.get("op") == op), None)
         try:
-            await self.s.wait(lambda: self.replies, timeout)
+            await self.s.wait(lambda: mine() is not None, timeout)
         except TimeoutError:
             raise FsError("%s: no reply" % op) from None
-        body = self.replies.pop(0)
+        body = self.replies.pop(mine())
         if not body.get("ok"):
             raise FsError("%s %s: %s" % (op, args.get("path", ""), body.get("error")))
         return body
 
-    async def put(self, path: str, data: bytes, chunk=1400, window=8192, timeout=30.0):
-        """Writes ``data`` to ``path`` on the board; it replaces the file only when size and SHA-256 match."""
-        await self.request("put", path=path, size=len(data))
-        self.acked = 0
-        at = 0
-        while at < len(data):
-            await self.s.wait(lambda: at - self.acked < window, timeout)
-            part = data[at:at + chunk]
-            self.s.send_frame(DATA, struct.pack("<I", at) + part)
-            at += len(part)
-        res = await self.request("close", timeout, sha256=hashlib.sha256(data).hexdigest())
-        return res
+    async def put(self, path: str, data: bytes, chunk=1400, window=8192, timeout=30.0, max_frames_per_sec=40,
+                  stall=15.0):
+        """Writes ``data`` to ``path`` on the board; it replaces the file only when size and SHA-256 match.
+
+        ``max_frames_per_sec`` paces the data frames below the server's message quota (anonymous: 50/s on
+        io.iosignal.net; a frame the server drops makes the board refuse the rest), the same as the web IDE.
+        The upload stops at once on a quota notice or a refusal from the board, and after ``stall`` seconds
+        without an ack; the board then gets an abort and drops its .part file."""
+        quota = {}
+
+        def on_server(body):
+            if isinstance(body, dict) and body.get("event") == "quota_exceeded":
+                quota.update(body.get("data") or {"kind": "quota"})
+                self.s.changed.set()
+
+        def failure():
+            if quota:
+                return "the server's quota stopped the upload (%s %s, %s)" % (
+                    quota.get("kind"), quota.get("limit"), quota.get("quota"))
+            refused = next((r for r in self.replies if r.get("op") == "put" and not r.get("ok", True)), None)
+            if refused is None:
+                return None
+            if "offset" in str(refused.get("error")):
+                return "a frame went missing and the board stopped the upload (server quota or link: %s)" % refused.get("error")
+            return "the board stopped the upload: %s" % refused.get("error")
+
+        self.s.io.on_event("server_signal", on_server)
+        try:
+            await self.request("put", path=path, size=len(data))
+            self.acked = 0
+            gap = 1.0 / max_frames_per_sec if max_frames_per_sec else 0.0
+            at, nxt = 0, 0.0
+            try:
+                while at < len(data):
+                    last = self.acked
+                    while True:  # room in the window; give up when acks stop for ``stall`` seconds
+                        try:
+                            await self.s.wait(lambda: failure() or at - self.acked < window, stall)
+                            break
+                        except TimeoutError:
+                            if self.acked != last:
+                                last = self.acked
+                                continue
+                            raise FsError("the board did not answer for %g s; upload stopped at %d of %d bytes"
+                                          % (stall, self.acked, len(data))) from None
+                    why = failure()
+                    if why:
+                        raise FsError(why)
+                    now = time.monotonic()
+                    if nxt > now:
+                        await asyncio.sleep(nxt - now)
+                    nxt = max(time.monotonic(), nxt) + gap
+                    part = data[at:at + chunk]
+                    self.s.send_frame(DATA, struct.pack("<I", at) + part)
+                    at += len(part)
+                return await self.request("close", timeout, sha256=hashlib.sha256(data).hexdigest())
+            except BaseException:
+                try:
+                    self.s.send_frame(FS, json.dumps({"op": "abort"}).encode())  # the board drops its .part file
+                except Exception:  # noqa: BLE001 - best effort
+                    pass
+                raise
+        finally:
+            self.s.io.off_event("server_signal", on_server)
 
     async def get(self, path: str, timeout=30.0) -> bytes:
         self.incoming, self.end = {}, None

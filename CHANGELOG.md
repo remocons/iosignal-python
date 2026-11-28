@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (not on PyPI yet)
 
 - REPL keys come in three forms (`iosignal.replkey`, the same rule as the web IDE): hex of 32+ digits as before
   (the 64-digit keys keep working), a 25-symbol key `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` (Crockford base32, 125 random
@@ -9,6 +9,13 @@
   Boards still store the key bytes as hex in `/repl.json`, so existing boards need no change. A passphrase can be
   guessed offline by anyone who sees a session's first frame (the broker included): prefer the random key.
 - Boards: a bad `/repl.json` key turns the remote REPL off instead of stopping `board.start()`.
+- `iosignal-repl put` / `Files.put` send at most 40 data frames a second (`max_frames_per_sec`), below the public
+  server's message quota for anonymous connections (50/s): a frame the server drops makes the board refuse the
+  rest of the file. Boards take far fewer today, so uploads are not slower. A quota notice, a refusal from the
+  board or 15 s without an ack (`stall`) now end the upload at once with the reason, and the board drops its
+  `.part` file.
+- File requests take only the reply that carries their own op, so a late reply (an abort, a timed-out
+  request) is never read as the answer to the next one.
 - Devices: the command `?` only asks for the state (`apply_command`, `board.device()`): nothing changes, the state is
   sent as usual.
 
